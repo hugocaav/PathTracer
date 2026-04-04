@@ -59,15 +59,33 @@ def parse_alert(event: dict) -> Alert | None:
 
 
 def correlate_incident(alert: Alert) -> None:
-    """Group alert into an existing incident or create a new one."""
+    """Group alert into existing incident by src_ip + technique family."""
     from django.utils import timezone
     from datetime import timedelta
 
-    # Look for open incident from same IP in last 10 minutes
+    # Map signature to attack family for grouping
+    sig_lower = alert.signature.lower()
+    if 'brute force' in sig_lower:
+        family = 'brute_force'
+    elif any(x in sig_lower for x in ['syn scan', 'null scan', 'fin scan', 'xmas scan', 'port scan']):
+        family = 'port_scan'
+    elif 'ping sweep' in sig_lower or 'icmp' in sig_lower:
+        family = 'recon'
+    elif 'smb' in sig_lower:
+        family = 'smb_scan'
+    elif 'rdp' in sig_lower:
+        family = 'rdp_scan'
+    elif 'http' in sig_lower:
+        family = 'web_scan'
+    else:
+        family = 'other'
+
+    # Look for open incident from same IP + same attack family in last 30 min
     recent = Incident.objects.filter(
         src_ip=alert.src_ip,
         status='open',
-        start_time__gte=alert.timestamp - timedelta(minutes=10)
+        technique_name__icontains=family,
+        start_time__gte=alert.timestamp - timedelta(minutes=30)
     ).first()
 
     if recent:
@@ -80,6 +98,7 @@ def correlate_incident(alert: Alert) -> None:
             src_ip=alert.src_ip,
             start_time=alert.timestamp,
             alert_count=1,
+            technique_name=family,
         )
         incident.alerts.add(alert)
 

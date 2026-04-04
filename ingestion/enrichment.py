@@ -14,25 +14,32 @@ from core.models import Incident, Alert
 
 # MITRE ATT&CK mapping based on alert signatures
 SIGNATURE_TO_TECHNIQUE = {
-    'ssh brute force':      ('T1110', 'Brute Force'),
+    'ssh brute force':      ('T1110.001', 'Brute Force: Password Guessing'),
+    'ftp brute force':      ('T1110.001', 'Brute Force: Password Guessing'),
+    'telnet brute force':   ('T1110.001', 'Brute Force: Password Guessing'),
+    'nmap syn scan':        ('T1046', 'Network Service Discovery'),
+    'nmap null scan':       ('T1046', 'Network Service Discovery'),
+    'nmap fin scan':        ('T1046', 'Network Service Discovery'),
+    'nmap xmas scan':       ('T1046', 'Network Service Discovery'),
     'port scan':            ('T1046', 'Network Service Discovery'),
-    'nmap':                 ('T1046', 'Network Service Discovery'),
+    'icmp ping sweep':      ('T1018', 'Remote System Discovery'),
+    'smb scan':             ('T1021.002', 'Remote Services: SMB/Windows Admin Shares'),
+    'rdp scan':             ('T1021.001', 'Remote Services: Remote Desktop Protocol'),
+    'http directory scan':  ('T1083', 'File and Directory Discovery'),
     'ping':                 ('T1018', 'Remote System Discovery'),
     'kali':                 ('T1592', 'Gather Victim Host Information'),
-    'hydra':                ('T1110', 'Brute Force'),
-    'ftp':                  ('T1071', 'Application Layer Protocol'),
-    'telnet':               ('T1021', 'Remote Services'),
-    'dns':                  ('T1071', 'Application Layer Protocol'),
 }
 
 # CVSS scores by MITRE technique (static fallback)
 TECHNIQUE_CVSS = {
-    'T1110': 7.5,   # Brute Force — High
-    'T1046': 5.3,   # Network Service Discovery — Medium
-    'T1018': 4.3,   # Remote System Discovery — Medium
-    'T1592': 4.3,   # Gather Victim Host Information
-    'T1071': 5.3,   # Application Layer Protocol
-    'T1021': 7.5,   # Remote Services
+    'T1110.001': 7.5,
+    'T1046':     5.3,
+    'T1018':     4.3,
+    'T1592':     4.3,
+    'T1021.002': 7.8,
+    'T1021.001': 7.8,
+    'T1083':     5.3,
+    'T1071':     5.3,
 }
 
 
