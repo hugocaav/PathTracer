@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+venv/
+*.sqlite3
+
+# VS Code
+.vscode/
+
+# Obsidian
+docs/.obsidian/
+
+# OS
+.DS_Store
+Thumbs.db
