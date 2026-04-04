@@ -6,7 +6,6 @@
       {
         "id": "541ce2ae80024fcb",
         "type": "tabs",
-        "dimension": 50.19035532994924,
         "children": [
           {
             "id": "d9a20abaa2c9db9e",
@@ -14,29 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "02_LabSetup/suricaata_setup.md",
+                "file": "03_Backend/backend_structure.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "suricaata_setup"
-            }
-          }
-        ]
-      },
-      {
-        "id": "dae0a9a8547f51ec",
-        "type": "tabs",
-        "dimension": 49.809644670050766,
-        "children": [
-          {
-            "id": "f34e96b16d239e0e",
-            "type": "leaf",
-            "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
+              "title": "backend_structure"
             }
           }
         ]
@@ -204,6 +186,7 @@
   "active": "d9a20abaa2c9db9e",
   "lastOpenFiles": [
     "02_LabSetup/suricaata_setup.md",
+    "03_Backend/backend_structure.md",
     "00_Overview.md",
     "01_Architecture/network_diagram.md",
     "01_Architecture/system_design.md",
