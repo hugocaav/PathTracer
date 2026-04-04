@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PathTracer — Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg:       #0c0b09;
+      --surface:  #161411;
+      --surf2:    #1e1b17;
+      --border:   #2d2820;
+      --text:     #e5ddd0;
+      --muted:    #7a6f62;
+      --dim:      #3d3529;
+      --amber:    #d4a843;
+      --amber-lo: rgba(212,168,67,0.08);
+      --red:      #e05252;
+      --red-lo:   rgba(224,82,82,0.1);
+      --green:    #52b870;
+      --blue:     #6b9fd4;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'IBM Plex Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* ─── HEADER ─────────────────────────────────────────── */
+    .hdr {
+      display: flex;
+      align-items: stretch;
+      border-bottom: 1px solid var(--border);
+      height: 52px;
+    }
+
+    .hdr-accent {
+      width: 3px;
+      background: var(--amber);
+      flex-shrink: 0;
+    }
+
+    .hdr-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex: 1;
+      padding: 0 20px;
+    }
+
+    .hdr-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .wordmark {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      color: var(--amber);
+      text-transform: uppercase;
+    }
+
+    .hdr-sep {
+      width: 1px;
+      height: 18px;
+      background: var(--border);
+    }
+
+    .hdr-sub {
+      font-size: 10px;
+      font-weight: 300;
+      color: var(--muted);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .hdr-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      animation: blink 3s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.35; }
+    }
+
+    .status-label {
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+    }
+
+    #live-clock {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+
+    /* ─── STAT STRIP ─────────────────────────────────────── */
+    .stat-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stat {
+      padding: 16px 20px;
+      border-right: 1px solid var(--border);
+      position: relative;
+    }
+
+    .stat:last-child { border-right: none; }
+
+    .stat::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 3px; height: 100%;
+      background: var(--amber);
+      opacity: 0.4;
+    }
+
+    .stat-lbl {
+      font-size: 9px;
+      font-weight: 500;
+      color: var(--amber);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .stat-val {
+      font-size: 32px;
+      font-weight: 600;
+      line-height: 1;
+      color: var(--text);
+    }
+
+    .stat-val.danger { color: var(--red); }
+    .stat-val.warn   { color: var(--amber); }
+
+    /* ─── MAIN GRID ──────────────────────────────────────── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ─── ATTACK MAP ─────────────────────────────────────── */
+    .map-pane {
+      border-right: 1px solid var(--border);
+      padding: 0;
+    }
+
+    .pane-hdr {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .pane-hdr-mark {
+      font-size: 9px;
+      font-weight: 500;
+      color: var(--amber);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .pane-hdr-line {
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    #attack-map {
+      width: 100%;
+      height: 360px;
+      background: var(--surface);
+      display: block;
+    }
+
+    /* ─── INCIDENTS LIST ─────────────────────────────────── */
+    .inc-pane {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .inc-list {
+      flex: 1;
+      overflow-y: auto;
+      height: 395px;
+    }
+
+    .inc-item {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+
+    .inc-item:hover {
+      background: var(--surf2);
+    }
+
+    .inc-row1 {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 3px;
+    }
+
+    .inc-id {
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+
+    .cvss {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+    }
+
+    .cvss-h { color: var(--red);   background: var(--red-lo); }
+    .cvss-m { color: var(--amber); background: var(--amber-lo); }
+    .cvss-l { color: var(--blue);  background: rgba(107,159,212,0.1); }
+
+    .inc-ip {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+
+    .inc-meta {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .inc-meta span {
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    /* ─── ALERTS SECTION ─────────────────────────────────── */
+    .alerts-section {
+      padding: 0;
+    }
+
+    .tbl-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead {
+      background: var(--surface);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    th {
+      font-size: 9px;
+      font-weight: 500;
+      color: var(--amber);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    th:first-child {
+      color: var(--dim);
+      width: 44px;
+      text-align: center;
+    }
+
+    td {
+      padding: 7px 12px;
+      border-bottom: 1px solid var(--dim);
+      vertical-align: middle;
+    }
+
+    td:first-child {
+      text-align: center;
+      font-size: 10px;
+      color: var(--dim);
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    tbody tr:hover td { background: var(--surf2); }
+    tbody tr:hover td:first-child { background: var(--surf2); }
+
+    .td-ts   { font-size: 11px; color: var(--muted); white-space: nowrap; }
+    .td-sig  { font-size: 12px; color: var(--text); }
+    .td-src  { font-size: 11px; color: var(--red); white-space: nowrap; }
+    .td-dst  { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+    .sev {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      padding: 2px 6px;
+    }
+
+    .sev-h { color: var(--red);   background: var(--red-lo); }
+    .sev-m { color: var(--amber); background: var(--amber-lo); }
+    .sev-l { color: var(--blue);  background: rgba(107,159,212,0.08); }
+    .sev-i { color: var(--muted); }
+
+    /* ─── SCROLLBAR ──────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="hdr">
+  <div class="hdr-accent"></div>
+  <div class="hdr-inner">
+    <div class="hdr-left">
+      <span class="wordmark">PathTracer</span>
+      <div class="hdr-sep"></div>
+      <span class="hdr-sub">Intrusion Detection System</span>
+    </div>
+    <div class="hdr-right">
+      <div class="status-dot"></div>
+      <span class="status-label">SYSTEM ACTIVE</span>
+      <div class="hdr-sep"></div>
+      <span id="live-clock"></span>
+    </div>
+  </div>
+</header>
+
+<!-- STAT STRIP -->
+<div class="stat-strip">
+  <div class="stat">
+    <div class="stat-lbl">Total Alerts</div>
+    <div class="stat-val">{{ total_alerts }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-lbl">Incidents</div>
+    <div class="stat-val">{{ total_incidents }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-lbl">Open</div>
+    <div class="stat-val warn">{{ open_incidents }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-lbl">High Risk</div>
+    <div class="stat-val danger">{{ high_risk }}</div>
+  </div>
+</div>
+
+<!-- ATTACK MAP + INCIDENTS -->
+<div class="main-grid">
+
+  <!-- Attack Map -->
+  <div class="map-pane">
+    <div class="pane-hdr">
+      <span class="pane-hdr-mark">Attack Map</span>
+      <div class="pane-hdr-line"></div>
+    </div>
+    <canvas id="attack-map"></canvas>
+  </div>
+
+  <!-- Incidents -->
+  <div class="inc-pane">
+    <div class="pane-hdr">
+      <span class="pane-hdr-mark">Incidents</span>
+      <div class="pane-hdr-line"></div>
+    </div>
+    <div class="inc-list">
+      {% for incident in incidents %}
+      <a href="/incidents/{{ incident.id }}/" class="inc-item">
+        <div class="inc-row1">
+          <span class="inc-id">#{{ incident.id }}</span>
+          {% if incident.cvss_score %}
+            {% if incident.cvss_score >= 7.0 %}
+              <span class="cvss cvss-h">{{ incident.cvss_score }}</span>
+            {% elif incident.cvss_score >= 4.0 %}
+              <span class="cvss cvss-m">{{ incident.cvss_score }}</span>
+            {% else %}
+              <span class="cvss cvss-l">{{ incident.cvss_score }}</span>
+            {% endif %}
+          {% endif %}
+        </div>
+        <div class="inc-ip">{{ incident.src_ip }}</div>
+        <div class="inc-meta">
+          <span>{{ incident.alert_count }} alerts</span>
+          <span>{{ incident.technique_id }}</span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+
+<!-- ALERTS TABLE -->
+<div class="alerts-section">
+  <div class="pane-hdr" style="border-top: 1px solid var(--border);">
+    <span class="pane-hdr-mark">Recent Alerts</span>
+    <div class="pane-hdr-line"></div>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Timestamp</th>
+          <th>Signature</th>
+          <th>Source IP</th>
+          <th>Dest IP</th>
+          <th>Severity</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alert in alerts %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td class="td-ts">{{ alert.timestamp|date:"M d H:i:s" }}</td>
+          <td class="td-sig">{{ alert.signature }}</td>
+          <td class="td-src">{{ alert.src_ip }}</td>
+          <td class="td-dst">{{ alert.dest_ip }}</td>
+          <td>
+            {% if alert.severity == 1 %}
+              <span class="sev sev-h">HIGH</span>
+            {% elif alert.severity == 2 %}
+              <span class="sev sev-m">MED</span>
+            {% elif alert.severity == 3 %}
+              <span class="sev sev-l">LOW</span>
+            {% else %}
+              <span class="sev sev-i">INFO</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  // Live clock
+  function updateClock() {
+    const now = new Date();
+    document.getElementById('live-clock').textContent =
+      now.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // Attack Map with D3.js
+  fetch('/api/incidents/')
+    .then(r => r.json())
+    .then(data => {
+      // Replace canvas with svg
+      const canvas = document.getElementById('attack-map');
+      const container = canvas.parentElement;
+      canvas.remove();
+
+      const width  = container.clientWidth;
+      const height = 360;
+
+      const svg = d3.select(container)
+        .append('svg')
+        .attr('id', 'attack-map')
+        .attr('width', width)
+        .attr('height', height)
+        .style('background', 'var(--surface)')
+        .style('display', 'block');
+
+      const nodeMap = {};
+      const links   = [];
+
+      data.incidents.forEach(inc => {
+        if (!nodeMap[inc.src_ip])
+          nodeMap[inc.src_ip] = { id: inc.src_ip, type: 'attacker', alerts: 0 };
+        nodeMap[inc.src_ip].alerts += inc.alert_count;
+
+        data.hosts.forEach(h => {
+          if (h.ip_address !== inc.src_ip) {
+            if (!nodeMap[h.ip_address])
+              nodeMap[h.ip_address] = { id: h.ip_address, type: 'victim', alerts: 0 };
+            links.push({ source: inc.src_ip, target: h.ip_address, cvss: inc.cvss_score });
+          }
+        });
+      });
+
+      const nodes = Object.values(nodeMap);
+      const uniqueLinks = links.filter((l, i, arr) =>
+        arr.findIndex(x => x.source === l.source && x.target === l.target) === i
+      );
+
+      const sim = d3.forceSimulation(nodes)
+        .force('link',   d3.forceLink(uniqueLinks).id(d => d.id).distance(130))
+        .force('charge', d3.forceManyBody().strength(-320))
+        .force('center', d3.forceCenter(width / 2, height / 2));
+
+      const link = svg.append('g')
+        .selectAll('line')
+        .data(uniqueLinks)
+        .join('line')
+        .attr('stroke',         d => d.cvss >= 7 ? '#e05252' : '#d4a843')
+        .attr('stroke-opacity', 0.35)
+        .attr('stroke-width',   1)
+        .attr('stroke-dasharray', '5,4');
+
+      const node = svg.append('g')
+        .selectAll('g')
+        .data(nodes)
+        .join('g')
+        .call(d3.drag()
+          .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+          .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
+          .on('end',   (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
+        );
+
+      node.append('circle')
+        .attr('r',            d => d.type === 'attacker' ? 13 : 9)
+        .attr('fill',         d => d.type === 'attacker' ? 'rgba(224,82,82,0.15)'  : 'rgba(212,168,67,0.1)')
+        .attr('stroke',       d => d.type === 'attacker' ? '#e05252'               : '#d4a843')
+        .attr('stroke-width', 1.5);
+
+      node.append('text')
+        .attr('dy',           '0.35em')
+        .attr('text-anchor',  'middle')
+        .attr('fill',         d => d.type === 'attacker' ? '#e05252' : '#d4a843')
+        .attr('font-size',    '9px')
+        .attr('font-family',  'IBM Plex Mono')
+        .text(d => d.type === 'attacker' ? '▲' : '◆');
+
+      node.append('text')
+        .attr('dy',           26)
+        .attr('text-anchor',  'middle')
+        .attr('fill',         '#7a6f62')
+        .attr('font-size',    '8px')
+        .attr('font-family',  'IBM Plex Mono')
+        .text(d => d.id);
+
+      sim.on('tick', () => {
+        link
+          .attr('x1', d => d.source.x)
+          .attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x)
+          .attr('y2', d => d.target.y);
+        node.attr('transform', d => `translate(${d.x},${d.y})`);
+      });
+    });
+</script>
+</body>
+</html>

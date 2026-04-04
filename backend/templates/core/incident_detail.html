@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Incident #{{ incident.id }} — PathTracer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg:       #0c0b09;
+      --surface:  #161411;
+      --surf2:    #1e1b17;
+      --border:   #2d2820;
+      --text:     #e5ddd0;
+      --muted:    #7a6f62;
+      --dim:      #3d3529;
+      --amber:    #d4a843;
+      --amber-lo: rgba(212,168,67,0.08);
+      --red:      #e05252;
+      --red-lo:   rgba(224,82,82,0.1);
+      --green:    #52b870;
+      --blue:     #6b9fd4;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'IBM Plex Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* ─── HEADER ─────────────────────────────────────────── */
+    .hdr {
+      display: flex;
+      align-items: stretch;
+      border-bottom: 1px solid var(--border);
+      height: 56px;
+    }
+
+    .hdr-accent {
+      width: 3px;
+      background: var(--amber);
+      flex-shrink: 0;
+    }
+
+    .hdr-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex: 1;
+      padding: 0 20px;
+    }
+
+    .hdr-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .back-link {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--muted);
+      text-decoration: none;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      transition: color 0.12s;
+    }
+
+    .back-link:hover { color: var(--amber); }
+
+    .hdr-sep {
+      width: 1px;
+      height: 22px;
+      background: var(--border);
+    }
+
+    .inc-heading {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.04em;
+    }
+
+    .cvss-block {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+    }
+
+    .cvss-num {
+      font-size: 20px;
+      font-weight: 600;
+      line-height: 1;
+    }
+
+    .cvss-lbl {
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .col-red   { color: var(--red); }
+    .col-amber { color: var(--amber); }
+    .col-blue  { color: var(--blue); }
+    .col-green { color: var(--green); }
+
+    /* ─── META STRIP ─────────────────────────────────────── */
+    .meta-strip {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      overflow-x: auto;
+    }
+
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+      padding: 8px 18px;
+      border-right: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .meta-item:last-child { border-right: none; }
+
+    .meta-key {
+      font-size: 8px;
+      font-weight: 500;
+      color: var(--amber);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+
+    .meta-val {
+      font-size: 11px;
+      color: var(--text);
+    }
+
+    .meta-val.red   { color: var(--red); }
+    .meta-val.amber { color: var(--amber); }
+    .meta-val.green { color: var(--green); }
+    .meta-val.muted { color: var(--muted); }
+
+    /* ─── BODY LAYOUT ────────────────────────────────────── */
+    .body-grid {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      min-height: calc(100vh - 105px);
+    }
+
+    /* ─── SIDEBAR ────────────────────────────────────────── */
+    .sidebar {
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+    }
+
+    .sb-section {
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sb-hdr {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .sb-hdr-mark {
+      font-size: 9px;
+      font-weight: 500;
+      color: var(--amber);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .sb-hdr-line {
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .sb-body {
+      padding: 12px 16px;
+    }
+
+    .kv-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 5px 0;
+      border-bottom: 1px solid var(--dim);
+    }
+
+    .kv-row:last-child { border-bottom: none; }
+
+    .kv-key {
+      font-size: 10px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .kv-val {
+      font-size: 10px;
+      color: var(--text);
+      text-align: right;
+      word-break: break-all;
+      max-width: 55%;
+    }
+
+    .kv-val.red   { color: var(--red); }
+    .kv-val.amber { color: var(--amber); }
+    .kv-val.green { color: var(--green); }
+
+    .technique-name {
+      font-size: 11px;
+      color: var(--text);
+      line-height: 1.6;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--dim);
+    }
+
+    /* ─── AI SECTION ─────────────────────────────────────── */
+    .sb-hdr.ai {
+      background: rgba(82,184,112,0.06);
+      border-color: rgba(82,184,112,0.18);
+    }
+
+    .sb-hdr.ai .sb-hdr-mark {
+      color: var(--green);
+    }
+
+    .sb-hdr.ai .sb-hdr-line {
+      background: rgba(82,184,112,0.18);
+    }
+
+    .sb-section.ai {
+      border-color: rgba(82,184,112,0.15);
+    }
+
+    .ai-text {
+      font-size: 11px;
+      color: rgba(82,184,112,0.85);
+      line-height: 1.7;
+    }
+
+    .no-ai {
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .gen-btn {
+      display: block;
+      width: 100%;
+      padding: 8px;
+      background: transparent;
+      border: 1px solid rgba(82,184,112,0.3);
+      color: var(--green);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+
+    .gen-btn:hover { background: rgba(82,184,112,0.08); }
+
+    .ai-loading {
+      font-size: 10px;
+      color: var(--green);
+      opacity: 0.6;
+      margin-top: 10px;
+      display: none;
+      letter-spacing: 0.06em;
+    }
+
+    /* ─── ALERTS TABLE ───────────────────────────────────── */
+    .alerts-pane {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .ap-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .ap-hdr-mark {
+      font-size: 9px;
+      font-weight: 500;
+      color: var(--amber);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .ap-count {
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .tbl-scroll {
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+
+    thead {
+      position: sticky;
+      top: 0;
+      background: var(--surf2);
+      z-index: 1;
+    }
+
+    th {
+      font-size: 9px;
+      font-weight: 500;
+      color: var(--amber);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      padding: 9px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    th:first-child {
+      color: var(--dim);
+      width: 44px;
+      text-align: center;
+    }
+
+    td {
+      padding: 7px 12px;
+      border-bottom: 1px solid var(--dim);
+      vertical-align: middle;
+    }
+
+    td:first-child {
+      text-align: center;
+      font-size: 10px;
+      color: var(--dim);
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    tbody tr:hover td            { background: var(--surf2); }
+    tbody tr:hover td:first-child { background: var(--surf2); }
+
+    .td-ts   { font-size: 10px; color: var(--muted); white-space: nowrap; }
+    .td-sig  { font-size: 12px; color: var(--text); }
+    .td-port { font-size: 10px; color: var(--muted); }
+    .td-proto{ font-size: 10px; color: var(--dim); text-transform: uppercase; }
+
+    /* ─── SCROLLBAR ──────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="hdr">
+  <div class="hdr-accent"></div>
+  <div class="hdr-inner">
+    <div class="hdr-left">
+      <a href="/" class="back-link">← Dashboard</a>
+      <div class="hdr-sep"></div>
+      <span class="inc-heading">Incident #{{ incident.id }}</span>
+    </div>
+    <div class="cvss-block">
+      {% if incident.cvss_score >= 7.0 %}
+        <span class="cvss-num col-red">CVSS {{ incident.cvss_score }}</span>
+        <span class="cvss-lbl col-red">High Risk</span>
+      {% elif incident.cvss_score >= 4.0 %}
+        <span class="cvss-num col-amber">CVSS {{ incident.cvss_score }}</span>
+        <span class="cvss-lbl col-amber">Medium Risk</span>
+      {% else %}
+        <span class="cvss-num col-blue">CVSS {{ incident.cvss_score }}</span>
+        <span class="cvss-lbl col-blue">Low Risk</span>
+      {% endif %}
+    </div>
+  </div>
+</header>
+
+<!-- META STRIP -->
+<div class="meta-strip">
+  <div class="meta-item">
+    <span class="meta-key">Source IP</span>
+    <span class="meta-val red">{{ incident.src_ip }}</span>
+  </div>
+  <div class="meta-item">
+    <span class="meta-key">Technique</span>
+    <span class="meta-val">{{ incident.technique_id }}</span>
+  </div>
+  <div class="meta-item">
+    <span class="meta-key">Status</span>
+    <span class="meta-val
+      {% if incident.status == 'open' %}red
+      {% elif incident.status == 'reviewing' %}amber
+      {% else %}green{% endif %}">
+      {{ incident.status|upper }}
+    </span>
+  </div>
+  <div class="meta-item">
+    <span class="meta-key">Start</span>
+    <span class="meta-val muted">{{ incident.start_time|date:"M d H:i:s" }}</span>
+  </div>
+  <div class="meta-item">
+    <span class="meta-key">End</span>
+    <span class="meta-val muted">{{ incident.end_time|date:"M d H:i:s"|default:"Ongoing" }}</span>
+  </div>
+  <div class="meta-item">
+    <span class="meta-key">Alerts</span>
+    <span class="meta-val">{{ incident.alert_count }}</span>
+  </div>
+</div>
+
+<!-- BODY -->
+<div class="body-grid">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- Details -->
+    <div class="sb-section">
+      <div class="sb-hdr">
+        <span class="sb-hdr-mark">Details</span>
+        <div class="sb-hdr-line"></div>
+      </div>
+      <div class="sb-body">
+        <div class="kv-row">
+          <span class="kv-key">Source IP</span>
+          <span class="kv-val red">{{ incident.src_ip }}</span>
+        </div>
+        <div class="kv-row">
+          <span class="kv-key">Alert Count</span>
+          <span class="kv-val">{{ incident.alert_count }}</span>
+        </div>
+        <div class="kv-row">
+          <span class="kv-key">Status</span>
+          <span class="kv-val
+            {% if incident.status == 'open' %}red
+            {% elif incident.status == 'reviewing' %}amber
+            {% else %}green{% endif %}">
+            {{ incident.status|upper }}
+          </span>
+        </div>
+        <div class="kv-row">
+          <span class="kv-key">Start</span>
+          <span class="kv-val">{{ incident.start_time|date:"M d H:i:s" }}</span>
+        </div>
+        <div class="kv-row">
+          <span class="kv-key">End</span>
+          <span class="kv-val">{{ incident.end_time|date:"M d H:i:s"|default:"Ongoing" }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- MITRE -->
+    <div class="sb-section">
+      <div class="sb-hdr">
+        <span class="sb-hdr-mark">MITRE ATT&CK</span>
+        <div class="sb-hdr-line"></div>
+      </div>
+      <div class="sb-body">
+        <div class="kv-row">
+          <span class="kv-key">Technique ID</span>
+          <span class="kv-val">{{ incident.technique_id }}</span>
+        </div>
+        <div class="technique-name">{{ incident.technique_name }}</div>
+      </div>
+    </div>
+
+    <!-- AI Analysis -->
+    <div class="sb-section ai">
+      <div class="sb-hdr ai">
+        <span class="sb-hdr-mark">AI Analysis</span>
+        <div class="sb-hdr-line"></div>
+      </div>
+      <div class="sb-body">
+        {% if incident.ai_summary %}
+          <p class="ai-text">{{ incident.ai_summary }}</p>
+        {% else %}
+          <p class="no-ai">No analysis generated yet.</p>
+          <button onclick="generateSummary({{ incident.id }})" class="gen-btn">
+            Generate Analysis
+          </button>
+          <div id="ai-loading" class="ai-loading">Analyzing incident...</div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ALERTS TABLE -->
+  <div class="alerts-pane">
+    <div class="ap-hdr">
+      <span class="ap-hdr-mark">Alerts</span>
+      <span class="ap-count">{{ alerts.count }} records</span>
+    </div>
+    <div class="tbl-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Timestamp</th>
+            <th>Signature</th>
+            <th>Src Port</th>
+            <th>Dest Port</th>
+            <th>Protocol</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for alert in alerts %}
+          <tr>
+            <td>{{ forloop.counter }}</td>
+            <td class="td-ts">{{ alert.timestamp|date:"M d H:i:s" }}</td>
+            <td class="td-sig">{{ alert.signature }}</td>
+            <td class="td-port">{{ alert.src_port|default:"—" }}</td>
+            <td class="td-port">{{ alert.dest_port|default:"—" }}</td>
+            <td class="td-proto">{{ alert.protocol|upper }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function generateSummary(incidentId) {
+  document.getElementById('ai-loading').classList.remove('hidden');
+  
+  // Get CSRF token from cookie
+  const csrfToken = document.cookie
+    .split('; ')
+    .find(row => row.startsWith('csrftoken='))
+    ?.split('=')[1];
+
+  fetch(`/api/incidents/${incidentId}/summary/`, {
+    method: 'POST',
+    headers: {
+      'X-CSRFToken': csrfToken,
+      'Content-Type': 'application/json',
+    },
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.summary) {
+        location.reload();
+      } else {
+        document.getElementById('ai-loading').textContent = 'Error: ' + data.error;
+      }
+    });
+}
+</script>
+</body>
+</html>
