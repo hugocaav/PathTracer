@@ -1,588 +1,888 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PathTracer — Dashboard</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="refresh" content="15">
+  <title>PathTracer Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://d3js.org/d3.v7.min.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg:       #0c0b09;
-      --surface:  #161411;
-      --surf2:    #1e1b17;
-      --border:   #2d2820;
-      --text:     #e5ddd0;
-      --muted:    #7a6f62;
-      --dim:      #3d3529;
-      --amber:    #d4a843;
-      --amber-lo: rgba(212,168,67,0.08);
-      --red:      #e05252;
-      --red-lo:   rgba(224,82,82,0.1);
-      --green:    #52b870;
-      --blue:     #6b9fd4;
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #1c2128;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --warning: #d29922;
+      --danger: #f85149;
+      --success: #3fb950;
+      --dim: #21262d;
     }
 
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      background: var(--bg);
+    }
 
     body {
-      font-family: 'IBM Plex Mono', monospace;
-      background: var(--bg);
+      margin: 0;
+      background:
+        radial-gradient(circle at top right, rgba(88, 166, 255, 0.08), transparent 30%),
+        linear-gradient(180deg, #0d1117 0%, #0d1117 100%);
       color: var(--text);
+      font-family: "Inter", sans-serif;
       font-size: 13px;
       line-height: 1.5;
-      min-height: 100vh;
     }
 
-    /* ─── HEADER ─────────────────────────────────────────── */
-    .hdr {
-      display: flex;
-      align-items: stretch;
+    .mono {
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    .page-shell {
+      width: min(1600px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 0 0 24px;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      height: 56px;
+      background: rgba(13, 17, 23, 0.94);
+      backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--border);
-      height: 52px;
     }
 
-    .hdr-accent {
-      width: 3px;
-      background: var(--amber);
-      flex-shrink: 0;
-    }
-
-    .hdr-inner {
+    .topbar-inner {
+      width: min(1600px, calc(100vw - 32px));
+      height: 100%;
+      margin: 0 auto;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      flex: 1;
-      padding: 0 20px;
     }
 
-    .hdr-left {
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .brand-name {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-subtitle {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .status-cluster {
       display: flex;
       align-items: center;
       gap: 16px;
-    }
-
-    .wordmark {
-      font-size: 15px;
-      font-weight: 600;
-      letter-spacing: 0.18em;
-      color: var(--amber);
-      text-transform: uppercase;
-    }
-
-    .hdr-sep {
-      width: 1px;
-      height: 18px;
-      background: var(--border);
-    }
-
-    .hdr-sub {
-      font-size: 10px;
-      font-weight: 300;
       color: var(--muted);
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
+      font-size: 12px;
     }
 
-    .hdr-right {
-      display: flex;
+    .status-inline {
+      display: inline-flex;
       align-items: center;
-      gap: 14px;
-    }
-
-    .status-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 6px var(--green);
-      animation: blink 3s ease-in-out infinite;
-    }
-
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.35; }
-    }
-
-    .status-label {
-      font-size: 10px;
-      color: var(--muted);
-      letter-spacing: 0.1em;
-    }
-
-    #live-clock {
-      font-size: 11px;
-      color: var(--muted);
-      letter-spacing: 0.05em;
-    }
-
-    /* ─── STAT STRIP ─────────────────────────────────────── */
-    .stat-strip {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .stat {
-      padding: 16px 20px;
-      border-right: 1px solid var(--border);
-      position: relative;
-    }
-
-    .stat:last-child { border-right: none; }
-
-    .stat::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0;
-      width: 3px; height: 100%;
-      background: var(--amber);
-      opacity: 0.4;
-    }
-
-    .stat-lbl {
-      font-size: 9px;
-      font-weight: 500;
-      color: var(--amber);
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      margin-bottom: 6px;
-    }
-
-    .stat-val {
-      font-size: 32px;
-      font-weight: 600;
-      line-height: 1;
+      gap: 8px;
       color: var(--text);
     }
 
-    .stat-val.danger { color: var(--red); }
-    .stat-val.warn   { color: var(--amber); }
+    .status-dot,
+    .section-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--success);
+    }
 
-    /* ─── MAIN GRID ──────────────────────────────────────── */
+    .status-dot {
+      box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.3);
+      animation: statusPulse 1.8s ease-in-out infinite;
+    }
+
+    .section-dot {
+      width: 6px;
+      height: 6px;
+      animation: statusPulse 1.8s ease-in-out infinite;
+    }
+
+    @keyframes statusPulse {
+      0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+        box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.28);
+      }
+      50% {
+        transform: scale(1.2);
+        opacity: 0.75;
+        box-shadow: 0 0 0 6px rgba(63, 185, 80, 0);
+      }
+    }
+
+    .content {
+      padding-top: 18px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .stat-card,
+    .panel {
+      background: rgba(22, 27, 34, 0.94);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    .stat-card {
+      padding: 14px 16px 14px 18px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 12px;
+      bottom: 12px;
+      width: 3px;
+      border-radius: 999px;
+      background: var(--text);
+      opacity: 0.9;
+    }
+
+    .stat-card.accent::before { background: var(--accent); }
+    .stat-card.warning::before { background: var(--warning); }
+    .stat-card.danger::before { background: var(--danger); }
+
+    .stat-label {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    .stat-value {
+      font-size: 29px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: var(--text);
+    }
+
+    .stat-value.accent { color: var(--accent); }
+    .stat-value.warning { color: var(--warning); }
+    .stat-value.danger { color: var(--danger); }
+
     .main-grid {
       display: grid;
-      grid-template-columns: 1fr 320px;
-      border-bottom: 1px solid var(--border);
+      grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
+      gap: 18px;
+      margin-bottom: 18px;
     }
 
-    /* ─── ATTACK MAP ─────────────────────────────────────── */
-    .map-pane {
-      border-right: 1px solid var(--border);
-      padding: 0;
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(48, 54, 61, 0.75);
     }
 
-    .pane-hdr {
+    .panel-title {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 10px 16px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-    }
-
-    .pane-hdr-mark {
-      font-size: 9px;
-      font-weight: 500;
-      color: var(--amber);
-      letter-spacing: 0.18em;
+      font-size: 11px;
+      color: var(--text);
+      letter-spacing: 0.12em;
       text-transform: uppercase;
+      font-weight: 700;
     }
 
-    .pane-hdr-line {
-      flex: 1;
-      height: 1px;
-      background: var(--border);
+    .panel-body {
+      padding: 14px 16px 16px;
+    }
+
+    .card-subtle {
+      color: var(--muted);
+      font-size: 11px;
     }
 
     #attack-map {
       width: 100%;
-      height: 360px;
-      background: var(--surface);
+      height: 380px;
       display: block;
     }
 
-    /* ─── INCIDENTS LIST ─────────────────────────────────── */
-    .inc-pane {
+    .queue-list {
+      max-height: 380px;
+      overflow: auto;
       display: flex;
       flex-direction: column;
     }
 
-    .inc-list {
-      flex: 1;
-      overflow-y: auto;
-      height: 395px;
-    }
-
-    .inc-item {
+    .incident-row {
       display: block;
       text-decoration: none;
       color: inherit;
-      padding: 10px 16px;
-      border-bottom: 1px solid var(--border);
-      transition: background 0.1s;
+      padding: 12px 14px;
+      border-left: 3px solid var(--dim);
+      border-bottom: 1px solid rgba(48, 54, 61, 0.55);
+      background: transparent;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
     }
 
-    .inc-item:hover {
-      background: var(--surf2);
+    .incident-row:hover {
+      background: rgba(255, 255, 255, 0.025);
     }
 
-    .inc-row1 {
+    .incident-row:last-child {
+      border-bottom: 0;
+    }
+
+    .incident-row.sev-high { border-left-color: var(--danger); }
+    .incident-row.sev-medium { border-left-color: var(--warning); }
+    .incident-row.sev-low { border-left-color: var(--accent); }
+
+    .incident-top,
+    .incident-bottom {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      margin-bottom: 3px;
-    }
-
-    .inc-id {
-      font-size: 10px;
-      color: var(--muted);
-      letter-spacing: 0.06em;
-    }
-
-    .cvss {
-      font-size: 10px;
-      font-weight: 600;
-      padding: 1px 6px;
-    }
-
-    .cvss-h { color: var(--red);   background: var(--red-lo); }
-    .cvss-m { color: var(--amber); background: var(--amber-lo); }
-    .cvss-l { color: var(--blue);  background: rgba(107,159,212,0.1); }
-
-    .inc-ip {
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text);
-      margin-bottom: 2px;
-    }
-
-    .inc-meta {
-      display: flex;
       justify-content: space-between;
+      gap: 12px;
     }
 
-    .inc-meta span {
-      font-size: 10px;
+    .incident-bottom {
+      margin-top: 6px;
       color: var(--muted);
+      font-size: 11px;
     }
 
-    /* ─── ALERTS SECTION ─────────────────────────────────── */
-    .alerts-section {
-      padding: 0;
+    .incident-id {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
     }
 
-    .tbl-wrap {
-      overflow-x: auto;
+    .incident-ip {
+      color: var(--danger);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .cvss-badge,
+    .severity-badge {
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      padding: 4px 8px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .cvss-badge.high,
+    .severity-badge.high {
+      color: var(--danger);
+      background: rgba(248, 81, 73, 0.12);
+      border-color: rgba(248, 81, 73, 0.2);
+    }
+
+    .cvss-badge.medium,
+    .severity-badge.medium {
+      color: var(--warning);
+      background: rgba(210, 153, 34, 0.12);
+      border-color: rgba(210, 153, 34, 0.2);
+    }
+
+    .cvss-badge.low,
+    .severity-badge.low {
+      color: var(--accent);
+      background: rgba(88, 166, 255, 0.12);
+      border-color: rgba(88, 166, 255, 0.2);
+    }
+
+    .severity-badge.info {
+      color: var(--muted);
+      background: rgba(139, 148, 158, 0.12);
+      border-color: rgba(139, 148, 158, 0.18);
+    }
+
+    #timeline-chart {
+      width: 100%;
+      height: 180px;
+      display: block;
+    }
+
+    .table-shell {
+      max-height: 480px;
+      overflow: auto;
+      border-radius: 0 0 14px 14px;
     }
 
     table {
       width: 100%;
-      border-collapse: collapse;
+      border-collapse: separate;
+      border-spacing: 0;
     }
 
-    thead {
-      background: var(--surface);
+    thead th {
       position: sticky;
       top: 0;
       z-index: 2;
+      background: var(--surface2);
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 12px 14px;
+      text-align: left;
     }
 
-    th {
-      font-size: 9px;
-      font-weight: 500;
-      color: var(--amber);
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      padding: 10px 12px;
-      text-align: left;
-      border-bottom: 1px solid var(--border);
+    tbody td {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+      vertical-align: top;
+    }
+
+    tbody tr:nth-child(odd) td {
+      background: rgba(255, 255, 255, 0.012);
+    }
+
+    tbody tr:nth-child(even) td {
+      background: rgba(28, 33, 40, 0.72);
+    }
+
+    tbody tr:hover td {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .table-index {
+      width: 56px;
+      color: var(--muted);
+    }
+
+    .time-cell,
+    .ip-cell {
+      font-family: "JetBrains Mono", monospace;
+      color: var(--text);
       white-space: nowrap;
     }
 
-    th:first-child {
-      color: var(--dim);
-      width: 44px;
-      text-align: center;
+    .time-cell {
+      color: var(--muted);
     }
 
-    td {
-      padding: 7px 12px;
-      border-bottom: 1px solid var(--dim);
-      vertical-align: middle;
+    .signature-cell {
+      color: var(--text);
+      min-width: 280px;
     }
 
-    td:first-child {
-      text-align: center;
-      font-size: 10px;
-      color: var(--dim);
-      border-right: 1px solid var(--border);
-      background: var(--surface);
+    .empty-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      height: 100%;
+      min-height: 220px;
+      font-size: 12px;
+      letter-spacing: 0.04em;
     }
 
-    tbody tr:hover td { background: var(--surf2); }
-    tbody tr:hover td:first-child { background: var(--surf2); }
+    .axis text,
+    .axis line,
+    .axis path {
+      color: var(--muted);
+      stroke: var(--border);
+    }
 
-    .td-ts   { font-size: 11px; color: var(--muted); white-space: nowrap; }
-    .td-sig  { font-size: 12px; color: var(--text); }
-    .td-src  { font-size: 11px; color: var(--red); white-space: nowrap; }
-    .td-dst  { font-size: 11px; color: var(--muted); white-space: nowrap; }
+    .grid-line {
+      stroke: rgba(48, 54, 61, 0.8);
+      stroke-dasharray: 3 4;
+    }
 
-    .sev {
+    .graph-label {
+      fill: var(--muted);
+      font-family: "JetBrains Mono", monospace;
       font-size: 9px;
-      font-weight: 600;
-      letter-spacing: 0.1em;
-      padding: 2px 6px;
     }
 
-    .sev-h { color: var(--red);   background: var(--red-lo); }
-    .sev-m { color: var(--amber); background: var(--amber-lo); }
-    .sev-l { color: var(--blue);  background: rgba(107,159,212,0.08); }
-    .sev-i { color: var(--muted); }
+    .graph-node {
+      stroke: rgba(230, 237, 243, 0.18);
+      stroke-width: 1;
+    }
 
-    /* ─── SCROLLBAR ──────────────────────────────────────── */
-    ::-webkit-scrollbar { width: 4px; height: 4px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
-    ::-webkit-scrollbar-thumb { background: var(--border); }
+    .graph-link {
+      stroke-dasharray: 5 5;
+      opacity: 0.8;
+    }
+
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--dim);
+      border-radius: 999px;
+      border: 2px solid transparent;
+      background-clip: content-box;
+    }
+
+    @media (max-width: 1100px) {
+      .stats-grid,
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .page-shell,
+      .topbar-inner {
+        width: calc(100vw - 20px);
+      }
+
+      .status-cluster {
+        gap: 10px;
+        font-size: 11px;
+      }
+
+      .brand {
+        flex-direction: column;
+        gap: 0;
+        align-items: flex-start;
+      }
+
+      .brand-subtitle {
+        font-size: 11px;
+      }
+
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body>
-
-<!-- HEADER -->
-<header class="hdr">
-  <div class="hdr-accent"></div>
-  <div class="hdr-inner">
-    <div class="hdr-left">
-      <span class="wordmark">PathTracer</span>
-      <div class="hdr-sep"></div>
-      <span class="hdr-sub">Intrusion Detection System</span>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-name">PathTracer</div>
+        <div class="brand-subtitle">Threat Detection &amp; Analysis</div>
+      </div>
+      <div class="status-cluster">
+        <span class="status-inline">
+          <span class="status-dot"></span>
+          <span>System Online</span>
+        </span>
+        <span class="mono" id="utc-clock">0000-00-00 00:00:00 UTC</span>
+      </div>
     </div>
-    <div class="hdr-right">
-      <div class="status-dot"></div>
-      <span class="status-label">SYSTEM ACTIVE</span>
-      <div class="hdr-sep"></div>
-      <span id="live-clock"></span>
-    </div>
-  </div>
-</header>
+  </header>
 
-<!-- STAT STRIP -->
-<div class="stat-strip">
-  <div class="stat">
-    <div class="stat-lbl">Total Alerts</div>
-    <div class="stat-val">{{ total_alerts }}</div>
-  </div>
-  <div class="stat">
-    <div class="stat-lbl">Incidents</div>
-    <div class="stat-val">{{ total_incidents }}</div>
-  </div>
-  <div class="stat">
-    <div class="stat-lbl">Open</div>
-    <div class="stat-val warn">{{ open_incidents }}</div>
-  </div>
-  <div class="stat">
-    <div class="stat-lbl">High Risk</div>
-    <div class="stat-val danger">{{ high_risk }}</div>
-  </div>
-</div>
+  <div class="page-shell content">
+    <section class="stats-grid">
+      <article class="stat-card">
+        <div class="stat-label">Total Alerts</div>
+        <div class="stat-value">{{ total_alerts }}</div>
+      </article>
+      <article class="stat-card accent">
+        <div class="stat-label">Active Incidents</div>
+        <div class="stat-value accent">{{ total_incidents }}</div>
+      </article>
+      <article class="stat-card warning">
+        <div class="stat-label">Open Cases</div>
+        <div class="stat-value warning">{{ open_incidents }}</div>
+      </article>
+      <article class="stat-card danger">
+        <div class="stat-label">High Risk</div>
+        <div class="stat-value danger">{{ high_risk }}</div>
+      </article>
+    </section>
 
-<!-- ATTACK MAP + INCIDENTS -->
-<div class="main-grid">
-
-  <!-- Attack Map -->
-  <div class="map-pane">
-    <div class="pane-hdr">
-      <span class="pane-hdr-mark">Attack Map</span>
-      <div class="pane-hdr-line"></div>
-    </div>
-    <canvas id="attack-map"></canvas>
-  </div>
-
-  <!-- Incidents -->
-  <div class="inc-pane">
-    <div class="pane-hdr">
-      <span class="pane-hdr-mark">Incidents</span>
-      <div class="pane-hdr-line"></div>
-    </div>
-    <div class="inc-list">
-      {% for incident in incidents %}
-      <a href="/incidents/{{ incident.id }}/" class="inc-item">
-        <div class="inc-row1">
-          <span class="inc-id">#{{ incident.id }}</span>
-          {% if incident.cvss_score %}
-            {% if incident.cvss_score >= 7.0 %}
-              <span class="cvss cvss-h">{{ incident.cvss_score }}</span>
-            {% elif incident.cvss_score >= 4.0 %}
-              <span class="cvss cvss-m">{{ incident.cvss_score }}</span>
-            {% else %}
-              <span class="cvss cvss-l">{{ incident.cvss_score }}</span>
-            {% endif %}
-          {% endif %}
+    <section class="main-grid">
+      <article class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="section-dot"></span>
+            <span>Network Attack Map</span>
+          </div>
+          <div class="card-subtle">Live incident relationships</div>
         </div>
-        <div class="inc-ip">{{ incident.src_ip }}</div>
-        <div class="inc-meta">
-          <span>{{ incident.alert_count }} alerts</span>
-          <span>{{ incident.technique_id }}</span>
+        <div class="panel-body">
+          <svg id="attack-map" viewBox="0 0 1000 380" preserveAspectRatio="xMidYMid meet"></svg>
         </div>
-      </a>
-      {% endfor %}
-    </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Active Incidents</div>
+          <div class="card-subtle">{{ incidents|length }} tracked</div>
+        </div>
+        <div class="queue-list">
+          {% for incident in incidents %}
+            <a
+              class="incident-row {% if incident.cvss_score >= 7.0 %}sev-high{% elif incident.cvss_score >= 4.0 %}sev-medium{% else %}sev-low{% endif %}"
+              href="/incidents/{{ incident.id }}/"
+            >
+              <div class="incident-top">
+                <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+                  <span class="incident-id mono">#{{ incident.id }}</span>
+                  <span class="incident-ip mono">{{ incident.src_ip }}</span>
+                </div>
+                {% if incident.cvss_score >= 7.0 %}
+                  <span class="cvss-badge high">CVSS {{ incident.cvss_score }}</span>
+                {% elif incident.cvss_score >= 4.0 %}
+                  <span class="cvss-badge medium">CVSS {{ incident.cvss_score }}</span>
+                {% else %}
+                  <span class="cvss-badge low">CVSS {{ incident.cvss_score|default:"0.0" }}</span>
+                {% endif %}
+              </div>
+              <div class="incident-bottom">
+                <span>{{ incident.alert_count }} alerts</span>
+                <span class="mono">{{ incident.technique_id|default:"T0000" }}</span>
+              </div>
+            </a>
+          {% empty %}
+            <div class="empty-state">No incidents available.</div>
+          {% endfor %}
+        </div>
+      </article>
+    </section>
+
+    <section class="panel" style="margin-bottom: 18px;">
+      <div class="panel-header">
+        <div class="panel-title">Attack Timeline</div>
+      </div>
+      <div class="panel-body">
+        <svg id="timeline-chart" viewBox="0 0 1000 180" preserveAspectRatio="none"></svg>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Recent Alerts</div>
+        <div class="card-subtle">Latest 50 events</div>
+      </div>
+      <div class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th class="table-index">#</th>
+              <th>Time</th>
+              <th>Signature</th>
+              <th>Source IP</th>
+              <th>Dest IP</th>
+              <th>Severity</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for alert in alerts %}
+              <tr>
+                <td class="table-index">{{ forloop.counter }}</td>
+                <td class="time-cell">{{ alert.timestamp|date:"M d H:i:s" }}</td>
+                <td class="signature-cell">{{ alert.signature }}</td>
+                <td class="ip-cell">{{ alert.src_ip }}</td>
+                <td class="ip-cell">{{ alert.dest_ip }}</td>
+                <td>
+                  {% if alert.severity == 1 %}
+                    <span class="severity-badge high">High</span>
+                  {% elif alert.severity == 2 %}
+                    <span class="severity-badge medium">Med</span>
+                  {% elif alert.severity == 3 %}
+                    <span class="severity-badge low">Low</span>
+                  {% else %}
+                    <span class="severity-badge info">Info</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="6">
+                  <div class="empty-state">No alerts available.</div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
   </div>
 
-</div>
+  <script>
+    function updateUtcClock() {
+      const now = new Date();
+      const parts = [
+        now.getUTCFullYear(),
+        String(now.getUTCMonth() + 1).padStart(2, "0"),
+        String(now.getUTCDate()).padStart(2, "0"),
+      ];
+      const time = [
+        String(now.getUTCHours()).padStart(2, "0"),
+        String(now.getUTCMinutes()).padStart(2, "0"),
+        String(now.getUTCSeconds()).padStart(2, "0"),
+      ];
+      document.getElementById("utc-clock").textContent = `${parts.join("-")} ${time.join(":")} UTC`;
+    }
 
-<!-- ALERTS TABLE -->
-<div class="alerts-section">
-  <div class="pane-hdr" style="border-top: 1px solid var(--border);">
-    <span class="pane-hdr-mark">Recent Alerts</span>
-    <div class="pane-hdr-line"></div>
-  </div>
-  <div class="tbl-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Timestamp</th>
-          <th>Signature</th>
-          <th>Source IP</th>
-          <th>Dest IP</th>
-          <th>Severity</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for alert in alerts %}
-        <tr>
-          <td>{{ forloop.counter }}</td>
-          <td class="td-ts">{{ alert.timestamp|date:"M d H:i:s" }}</td>
-          <td class="td-sig">{{ alert.signature }}</td>
-          <td class="td-src">{{ alert.src_ip }}</td>
-          <td class="td-dst">{{ alert.dest_ip }}</td>
-          <td>
-            {% if alert.severity == 1 %}
-              <span class="sev sev-h">HIGH</span>
-            {% elif alert.severity == 2 %}
-              <span class="sev sev-m">MED</span>
-            {% elif alert.severity == 3 %}
-              <span class="sev sev-l">LOW</span>
-            {% else %}
-              <span class="sev sev-i">INFO</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
+    updateUtcClock();
+    setInterval(updateUtcClock, 1000);
 
-<script>
-  // Live clock
-  function updateClock() {
-    const now = new Date();
-    document.getElementById('live-clock').textContent =
-      now.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
-  }
-  setInterval(updateClock, 1000);
-  updateClock();
+    function cvssColor(score) {
+      if (score >= 7) return getComputedStyle(document.documentElement).getPropertyValue("--danger").trim();
+      if (score >= 4) return getComputedStyle(document.documentElement).getPropertyValue("--warning").trim();
+      return getComputedStyle(document.documentElement).getPropertyValue("--success").trim();
+    }
 
-  // Attack Map with D3.js
-  fetch('/api/incidents/')
-    .then(r => r.json())
-    .then(data => {
-      // Replace canvas with svg
-      const canvas = document.getElementById('attack-map');
-      const container = canvas.parentElement;
-      canvas.remove();
+    function buildAttackMap(payload) {
+      const svg = d3.select("#attack-map");
+      const width = svg.node().getBoundingClientRect().width || 1000;
+      const height = 380;
+      svg.selectAll("*").remove();
+      svg.attr("viewBox", `0 0 ${width} ${height}`);
 
-      const width  = container.clientWidth;
-      const height = 360;
+      const incidents = payload.incidents || [];
+      const hosts = payload.hosts || [];
+      const sourceIps = [...new Set(incidents.map((item) => item.src_ip))];
+      const victimIps = hosts
+        .map((host) => host.ip_address)
+        .filter((ip) => !sourceIps.includes(ip));
 
-      const svg = d3.select(container)
-        .append('svg')
-        .attr('id', 'attack-map')
-        .attr('width', width)
-        .attr('height', height)
-        .style('background', 'var(--surface)')
-        .style('display', 'block');
+      const nodeMap = new Map();
+      sourceIps.forEach((ip) => nodeMap.set(ip, { id: ip, type: "attacker" }));
+      victimIps.forEach((ip) => nodeMap.set(ip, { id: ip, type: "victim" }));
 
-      const nodeMap = {};
-      const links   = [];
-
-      data.incidents.forEach(inc => {
-        if (!nodeMap[inc.src_ip])
-          nodeMap[inc.src_ip] = { id: inc.src_ip, type: 'attacker', alerts: 0 };
-        nodeMap[inc.src_ip].alerts += inc.alert_count;
-
-        data.hosts.forEach(h => {
-          if (h.ip_address !== inc.src_ip) {
-            if (!nodeMap[h.ip_address])
-              nodeMap[h.ip_address] = { id: h.ip_address, type: 'victim', alerts: 0 };
-            links.push({ source: inc.src_ip, target: h.ip_address, cvss: inc.cvss_score });
+      if (!victimIps.length && hosts.length) {
+        hosts.forEach((host) => {
+          if (!nodeMap.has(host.ip_address)) {
+            nodeMap.set(host.ip_address, { id: host.ip_address, type: "victim" });
           }
+        });
+      }
+
+      const victims = [...nodeMap.values()].filter((node) => node.type === "victim").map((node) => node.id);
+      const links = [];
+
+      incidents.forEach((incident) => {
+        const targets = victims.length ? victims : hosts.map((host) => host.ip_address).filter((ip) => ip !== incident.src_ip);
+        targets.forEach((targetIp) => {
+          links.push({
+            source: incident.src_ip,
+            target: targetIp,
+            cvss: Number(incident.cvss_score || 0),
+          });
         });
       });
 
-      const nodes = Object.values(nodeMap);
-      const uniqueLinks = links.filter((l, i, arr) =>
-        arr.findIndex(x => x.source === l.source && x.target === l.target) === i
+      const dedupedLinks = Array.from(
+        new Map(
+          links.map((link) => [`${link.source}-${link.target}`, link])
+        ).values()
       );
 
-      const sim = d3.forceSimulation(nodes)
-        .force('link',   d3.forceLink(uniqueLinks).id(d => d.id).distance(130))
-        .force('charge', d3.forceManyBody().strength(-320))
-        .force('center', d3.forceCenter(width / 2, height / 2));
+      const nodes = [...nodeMap.values()];
+      if (!nodes.length) {
+        svg.append("text")
+          .attr("x", width / 2)
+          .attr("y", height / 2)
+          .attr("fill", "var(--muted)")
+          .attr("text-anchor", "middle")
+          .text("No network relationships available");
+        return;
+      }
 
-      const link = svg.append('g')
-        .selectAll('line')
-        .data(uniqueLinks)
-        .join('line')
-        .attr('stroke',         d => d.cvss >= 7 ? '#e05252' : '#d4a843')
-        .attr('stroke-opacity', 0.35)
-        .attr('stroke-width',   1)
-        .attr('stroke-dasharray', '5,4');
+      const simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(dedupedLinks).id((d) => d.id).distance(150))
+        .force("charge", d3.forceManyBody().strength(-420))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collision", d3.forceCollide().radius(34));
 
-      const node = svg.append('g')
-        .selectAll('g')
+      const link = svg.append("g")
+        .selectAll("line")
+        .data(dedupedLinks)
+        .join("line")
+        .attr("class", "graph-link")
+        .attr("stroke-width", 1.5)
+        .attr("stroke", (d) => cvssColor(d.cvss));
+
+      const node = svg.append("g")
+        .selectAll("g")
         .data(nodes)
-        .join('g')
-        .call(d3.drag()
-          .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-          .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
-          .on('end',   (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
+        .join("g")
+        .call(
+          d3.drag()
+            .on("start", (event, d) => {
+              if (!event.active) simulation.alphaTarget(0.2).restart();
+              d.fx = d.x;
+              d.fy = d.y;
+            })
+            .on("drag", (event, d) => {
+              d.fx = event.x;
+              d.fy = event.y;
+            })
+            .on("end", (event, d) => {
+              if (!event.active) simulation.alphaTarget(0);
+              d.fx = null;
+              d.fy = null;
+            })
         );
 
-      node.append('circle')
-        .attr('r',            d => d.type === 'attacker' ? 13 : 9)
-        .attr('fill',         d => d.type === 'attacker' ? 'rgba(224,82,82,0.15)'  : 'rgba(212,168,67,0.1)')
-        .attr('stroke',       d => d.type === 'attacker' ? '#e05252'               : '#d4a843')
-        .attr('stroke-width', 1.5);
+      node.append("circle")
+        .attr("class", "graph-node")
+        .attr("r", (d) => d.type === "attacker" ? 11 : 9)
+        .attr("fill", (d) => d.type === "attacker" ? "var(--danger)" : "var(--accent)");
 
-      node.append('text')
-        .attr('dy',           '0.35em')
-        .attr('text-anchor',  'middle')
-        .attr('fill',         d => d.type === 'attacker' ? '#e05252' : '#d4a843')
-        .attr('font-size',    '9px')
-        .attr('font-family',  'IBM Plex Mono')
-        .text(d => d.type === 'attacker' ? '▲' : '◆');
+      node.append("text")
+        .attr("class", "graph-label")
+        .attr("text-anchor", "middle")
+        .attr("dy", 22)
+        .text((d) => d.id);
 
-      node.append('text')
-        .attr('dy',           26)
-        .attr('text-anchor',  'middle')
-        .attr('fill',         '#7a6f62')
-        .attr('font-size',    '8px')
-        .attr('font-family',  'IBM Plex Mono')
-        .text(d => d.id);
-
-      sim.on('tick', () => {
+      simulation.on("tick", () => {
         link
-          .attr('x1', d => d.source.x)
-          .attr('y1', d => d.source.y)
-          .attr('x2', d => d.target.x)
-          .attr('y2', d => d.target.y);
-        node.attr('transform', d => `translate(${d.x},${d.y})`);
+          .attr("x1", (d) => d.source.x)
+          .attr("y1", (d) => d.source.y)
+          .attr("x2", (d) => d.target.x)
+          .attr("y2", (d) => d.target.y);
+
+        node.attr("transform", (d) => `translate(${d.x}, ${d.y})`);
+      });
+    }
+
+    function buildTimeline(payload) {
+      const svg = d3.select("#timeline-chart");
+      const width = svg.node().getBoundingClientRect().width || 1000;
+      const height = 180;
+      const margin = { top: 8, right: 14, bottom: 34, left: 42 };
+      svg.selectAll("*").remove();
+      svg.attr("viewBox", `0 0 ${width} ${height}`);
+
+      const chart = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+      const innerWidth = width - margin.left - margin.right;
+      const innerHeight = height - margin.top - margin.bottom;
+      const timeline = payload.timeline || [];
+
+      if (!timeline.length) {
+        chart.append("text")
+          .attr("x", innerWidth / 2)
+          .attr("y", innerHeight / 2)
+          .attr("fill", "var(--muted)")
+          .attr("text-anchor", "middle")
+          .text("No timeline data available");
+        return;
+      }
+
+      const maxCount = Math.max(...timeline.map((item) => item.count), 1);
+      const x = d3.scaleBand()
+        .domain(timeline.map((item) => item.hour))
+        .range([0, innerWidth])
+        .padding(0.18);
+
+      const y = d3.scaleLinear()
+        .domain([0, maxCount])
+        .nice()
+        .range([innerHeight, 0]);
+
+      const colorScale = d3.scaleLinear()
+        .domain([0, maxCount * 0.55, maxCount])
+        .range(["#58a6ff", "#d29922", "#f85149"]);
+
+      chart.append("g")
+        .selectAll("line")
+        .data(y.ticks(4))
+        .join("line")
+        .attr("class", "grid-line")
+        .attr("x1", 0)
+        .attr("x2", innerWidth)
+        .attr("y1", (d) => y(d))
+        .attr("y2", (d) => y(d));
+
+      chart.selectAll("rect")
+        .data(timeline)
+        .join("rect")
+        .attr("x", (d) => x(d.hour))
+        .attr("y", (d) => y(d.count))
+        .attr("width", x.bandwidth())
+        .attr("height", (d) => innerHeight - y(d.count))
+        .attr("rx", 4)
+        .attr("fill", (d) => colorScale(d.count));
+
+      chart.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(0,${innerHeight})`)
+        .call(d3.axisBottom(x).tickValues(timeline.filter((_, index) => index % 2 === 0).map((item) => item.hour)))
+        .call((g) => g.selectAll("text")
+          .style("fill", "var(--muted)")
+          .style("font-family", '"JetBrains Mono", monospace')
+          .style("font-size", "9px"))
+        .call((g) => g.selectAll("path, line").attr("stroke", "var(--border)"));
+
+      chart.append("g")
+        .attr("class", "axis")
+        .call(d3.axisLeft(y).ticks(4))
+        .call((g) => g.selectAll("text")
+          .style("fill", "var(--muted)")
+          .style("font-family", '"JetBrains Mono", monospace')
+          .style("font-size", "9px"))
+        .call((g) => g.selectAll("path, line").attr("stroke", "var(--border)"));
+    }
+
+    Promise.all([
+      fetch("/api/incidents/").then((response) => response.json()),
+      fetch("/api/timeline/").then((response) => response.json()),
+    ]).then(([incidentData, timelineData]) => {
+      buildAttackMap(incidentData);
+      buildTimeline(timelineData);
+    }).catch(() => {
+      d3.select("#attack-map").append("text")
+        .attr("x", 500)
+        .attr("y", 180)
+        .attr("fill", "var(--muted)")
+        .attr("text-anchor", "middle")
+        .text("Failed to load dashboard telemetry");
+    });
+
+    window.addEventListener("resize", () => {
+      Promise.all([
+        fetch("/api/incidents/").then((response) => response.json()),
+        fetch("/api/timeline/").then((response) => response.json()),
+      ]).then(([incidentData, timelineData]) => {
+        buildAttackMap(incidentData);
+        buildTimeline(timelineData);
       });
     });
-</script>
+  </script>
 </body>
 </html>
