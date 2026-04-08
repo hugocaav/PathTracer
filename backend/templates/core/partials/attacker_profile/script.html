@@ -1,0 +1,52 @@
+const hourlyActivity = [
+      {% for entry in hourly_activity %}
+        { hour: "{{ entry.hour }}", count: {{ entry.count }} }{% if not forloop.last %},{% endif %}
+      {% endfor %}
+    ];
+
+    const svg = d3.select("#activity-chart");
+    const width = svg.node().getBoundingClientRect().width || 1000;
+    const height = 150;
+    const margin = { top: 8, right: 14, bottom: 30, left: 32 };
+    svg.attr("viewBox", `0 0 ${width} ${height}`);
+
+    const innerWidth = width - margin.left - margin.right;
+    const innerHeight = height - margin.top - margin.bottom;
+    const chart = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    const maxCount = Math.max(...hourlyActivity.map((item) => item.count), 1);
+
+    const x = d3.scaleBand()
+      .domain(hourlyActivity.map((item) => item.hour))
+      .range([0, innerWidth])
+      .padding(0.18);
+
+    const y = d3.scaleLinear()
+      .domain([0, maxCount])
+      .nice()
+      .range([innerHeight, 0]);
+
+    const color = d3.scaleLinear()
+      .domain([0, maxCount])
+      .range(["#2f81f7", "#f85149"]);
+
+    chart.selectAll("rect")
+      .data(hourlyActivity)
+      .join("rect")
+      .attr("x", (d) => x(d.hour))
+      .attr("y", (d) => y(d.count))
+      .attr("width", x.bandwidth())
+      .attr("height", (d) => innerHeight - y(d.count))
+      .attr("rx", 3)
+      .attr("fill", (d) => color(d.count));
+
+    chart.append("g")
+      .attr("transform", `translate(0,${innerHeight})`)
+      .call(d3.axisBottom(x).tickValues(hourlyActivity.filter((_, index) => index % 2 === 0).map((item) => item.hour)))
+      .call((g) => g.selectAll("text").style("fill", "var(--muted)").style("font-family", '"JetBrains Mono", monospace').style("font-size", "9px"))
+      .call((g) => g.selectAll("path, line").attr("stroke", "var(--border)"));
+
+    chart.append("g")
+      .call(d3.axisLeft(y).ticks(4))
+      .call((g) => g.selectAll("text").style("fill", "var(--muted)").style("font-family", '"JetBrains Mono", monospace').style("font-size", "9px"))
+      .call((g) => g.selectAll("path, line").attr("stroke", "var(--border)"));
+

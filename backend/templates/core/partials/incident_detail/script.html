@@ -1,0 +1,97 @@
+function getCsrfToken() {
+      return document.cookie
+        .split("; ")
+        .find((row) => row.startsWith("csrftoken="))
+        ?.split("=")[1];
+    }
+
+    const generateButton = document.getElementById("generate-analysis");
+    const analysisStatus = document.getElementById("analysis-status");
+    const killChainTrack = document.getElementById("killchain-track");
+    const killChainLabels = document.getElementById("killchain-stage-labels");
+    const killChainStatus = document.getElementById("killchain-status");
+    const killChainCurrent = document.getElementById("killchain-current");
+    const killChainConfidence = document.getElementById("killchain-confidence");
+    const killChainTechniques = document.getElementById("killchain-techniques");
+    const killChainActions = document.getElementById("killchain-actions");
+    const killChainTime = document.getElementById("killchain-time");
+
+    function renderKillChain(data) {
+      killChainTrack.innerHTML = "";
+      killChainLabels.innerHTML = "";
+
+      for (let stage = 1; stage <= 7; stage += 1) {
+        const segment = document.createElement("div");
+        segment.className = "killchain-stage";
+        if (data.current_stage && stage < data.current_stage) {
+          segment.classList.add("complete");
+        }
+        if (stage === data.current_stage) {
+          segment.classList.add("current");
+        } else if (stage === data.next_stage) {
+          segment.classList.add("predicted");
+        }
+        killChainTrack.appendChild(segment);
+
+        const label = document.createElement("div");
+        label.className = "killchain-stage-label";
+        label.textContent = stage;
+        killChainLabels.appendChild(label);
+      }
+
+      killChainStatus.textContent = data.narrative || "Kill chain stage derived from observed techniques.";
+      killChainCurrent.textContent = data.current_stage
+        ? `Stage ${data.current_stage}: ${data.current_stage_name}`
+        : "No confirmed stage yet";
+      killChainConfidence.textContent = `Confidence: ${data.confidence || 0}%`;
+      killChainTechniques.textContent = data.predicted_techniques?.length
+        ? data.predicted_techniques.join(", ")
+        : "No clear next technique predicted";
+      killChainTime.textContent = data.time_estimate ? `Estimated time to next stage: ${data.time_estimate}` : "";
+
+      killChainActions.innerHTML = "";
+      (data.recommended_actions || []).slice(0, 3).forEach((action) => {
+        const item = document.createElement("li");
+        item.textContent = action;
+        killChainActions.appendChild(item);
+      });
+    }
+
+    fetch("/api/killchain/{{ incident.src_ip }}/")
+      .then((response) => response.json())
+      .then((data) => renderKillChain(data))
+      .catch(() => {
+        killChainStatus.textContent = "Kill chain analysis unavailable.";
+        killChainCurrent.textContent = "No confirmed stage yet";
+        killChainConfidence.textContent = "";
+        killChainTechniques.textContent = "-";
+      });
+
+    if (generateButton) {
+      generateButton.addEventListener("click", async () => {
+        generateButton.disabled = true;
+        analysisStatus.textContent = "Analyzing...";
+
+        try {
+          const response = await fetch("/api/incidents/{{ incident.id }}/summary/", {
+            method: "POST",
+            headers: {
+              "X-CSRFToken": getCsrfToken(),
+              "Content-Type": "application/json",
+            },
+          });
+
+          const payload = await response.json();
+          if (!response.ok || !payload.summary) {
+            throw new Error(payload.error || "Analysis request failed");
+          }
+
+          window.location.reload();
+        } catch (error) {
+          generateButton.disabled = false;
+          analysisStatus.textContent = error.message;
+          analysisStatus.style.color = "var(--danger)";
+        }
+      });
+    }
+

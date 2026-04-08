@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ ip }} | Attacker Profile | PathTracer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    {% include 'core/partials/attacker_profile/styles.html' %}
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="header">
+      <div class="header-top">
+        <div>
+          <a href="/" class="back-link">&larr; Dashboard</a>
+          <div class="title mono">{{ ip }}</div>
+        </div>
+        <div class="threat-badge {{ threat_score.color_class }}">
+          Threat Score {{ threat_score.score }} &middot; {{ threat_score.label }}
+        </div>
+      </div>
+      <div class="chip-row">
+        <div class="chip">
+          <div class="chip-label">Total Alerts</div>
+          <div class="chip-value">{{ total_alerts }}</div>
+        </div>
+        <div class="chip">
+          <div class="chip-label">Total Incidents</div>
+          <div class="chip-value">{{ total_incidents }}</div>
+        </div>
+        <div class="chip">
+          <div class="chip-label">First Seen</div>
+          <div class="chip-value mono">{% if first_seen %}{{ first_seen|date:"M d H:i:s" }}{% else %}-{% endif %}</div>
+        </div>
+        <div class="chip">
+          <div class="chip-label">Last Seen</div>
+          <div class="chip-value mono">{% if last_seen %}{{ last_seen|date:"M d H:i:s" }}{% else %}-{% endif %}</div>
+        </div>
+      </div>
+    </header>
+
+    <section class="panel">
+      <div class="panel-header">Threat Score Breakdown</div>
+      <div class="panel-body">
+        <div class="score-track">
+          <div class="score-fill" style="width: {{ threat_score.score }}%;"></div>
+        </div>
+        <div class="factor-list">
+          {% for factor in threat_score.factors.values %}
+            <div class="factor-row">
+              <div class="factor-name">{{ factor.label }}</div>
+              <div class="factor-bar">
+                <div class="factor-bar-fill" style="width: {% widthratio factor.points factor.max_points 100 %}%"></div>
+              </div>
+              <div class="factor-score">{{ factor.points }}/{{ factor.max_points }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">Activity By Hour</div>
+      <div class="panel-body">
+        <svg id="activity-chart" viewBox="0 0 1000 150" preserveAspectRatio="none"></svg>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">Techniques Used</div>
+      <div class="panel-body" style="padding: 0;">
+        <table>
+          <thead>
+            <tr>
+              <th>Technique ID</th>
+              <th>Name</th>
+              <th>Alert Count</th>
+              <th>MITRE Link</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for technique in techniques %}
+              <tr>
+                <td class="mono">{{ technique.technique_id }}</td>
+                <td>{{ technique.technique_name }}</td>
+                <td>{{ technique.count }}</td>
+                <td>
+                  <a class="table-link" href="https://attack.mitre.org/techniques/{{ technique.technique_id }}/" target="_blank" rel="noopener noreferrer">
+                    Open &rarr;
+                  </a>
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4"><div class="empty-state">No techniques recorded for this attacker.</div></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    {% if ai_analysis %}
+      <section class="panel">
+        <div class="panel-header">AI Behavioral Analysis</div>
+        <div class="panel-body">
+          <div class="analysis-grid">
+            <div>
+              <div class="analysis-block-title">Attack Pattern</div>
+              <div class="analysis-block-text">{{ ai_analysis.attack_pattern }}</div>
+            </div>
+            <div>
+              <div class="analysis-block-title">Automation Likelihood</div>
+              <div class="analysis-block-text">{{ ai_analysis.automation_likelihood }}</div>
+            </div>
+            <div>
+              <div class="analysis-block-title">Sophistication</div>
+              <div class="analysis-block-text">{{ ai_analysis.sophistication }}</div>
+            </div>
+            <div>
+              <div class="analysis-block-title">Threat Assessment</div>
+              <div class="analysis-block-text">{{ ai_analysis.threat_assessment }}</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-header">Incident History</div>
+      <div class="panel-body" style="padding: 0;">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Start Time</th>
+              <th>Alerts</th>
+              <th>CVSS</th>
+              <th>Technique</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for incident in incidents %}
+              <tr>
+                <td><a class="table-link mono" href="/incidents/{{ incident.id }}/">#{{ incident.id }}</a></td>
+                <td class="mono">{{ incident.start_time|date:"M d H:i:s" }}</td>
+                <td>{{ incident.alert_count }}</td>
+                <td>
+                  {% if incident.cvss_score >= 7.0 %}
+                    <span class="cvss-high">{{ incident.cvss_score }}</span>
+                  {% elif incident.cvss_score >= 4.0 %}
+                    <span class="cvss-medium">{{ incident.cvss_score }}</span>
+                  {% else %}
+                    <span class="cvss-low">{{ incident.cvss_score|default:"0.0" }}</span>
+                  {% endif %}
+                </td>
+                <td>{{ incident.technique_id }}{% if incident.technique_name %} &middot; {{ incident.technique_name }}{% endif %}</td>
+                <td>{{ incident.status|upper }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="6"><div class="empty-state">No incidents recorded for this attacker.</div></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    {% include 'core/partials/attacker_profile/script.html' %}
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,951 @@
+function updateUtcClock() {
+      const now = new Date();
+      const parts = [
+        now.getUTCFullYear(),
+        String(now.getUTCMonth() + 1).padStart(2, "0"),
+        String(now.getUTCDate()).padStart(2, "0"),
+      ];
+      const time = [
+        String(now.getUTCHours()).padStart(2, "0"),
+        String(now.getUTCMinutes()).padStart(2, "0"),
+        String(now.getUTCSeconds()).padStart(2, "0"),
+      ];
+      document.getElementById("utc-clock").textContent = `${parts.join("-")} ${time.join(":")} UTC`;
+    }
+
+    updateUtcClock();
+    setInterval(updateUtcClock, 1000);
+
+    function cvssColor(score) {
+      if (score >= 7) return getComputedStyle(document.documentElement).getPropertyValue("--danger").trim();
+      if (score >= 4) return getComputedStyle(document.documentElement).getPropertyValue("--warning").trim();
+      return getComputedStyle(document.documentElement).getPropertyValue("--success").trim();
+    }
+
+    const threatScoreLookup = {
+      {% for ip, score in threat_scores.items %}
+        "{{ ip }}": { score: {{ score.score }}, label: "{{ score.label }}", colorClass: "{{ score.color_class }}" }{% if not forloop.last %},{% endif %}
+      {% endfor %}
+    };
+
+    const attackerProfileCache = new Map();
+    const attackMapShell = document.getElementById("attack-map-shell");
+    const attackMapDetail = document.getElementById("attack-map-detail");
+    const attackMapPanel = document.getElementById("attack-map-panel");
+    const attackMapHoverChip = document.getElementById("attack-map-hover-chip");
+    const attackMapState = {
+      payload: null,
+      selectedIp: null,
+      selectedType: null,
+    };
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function stageRingColor(stage) {
+      if (stage >= 5) return getComputedStyle(document.documentElement).getPropertyValue("--danger").trim();
+      if (stage >= 3) return getComputedStyle(document.documentElement).getPropertyValue("--warning").trim();
+      if (stage >= 1) return getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+      return getComputedStyle(document.documentElement).getPropertyValue("--border").trim();
+    }
+
+    function normalizeThreatScore(threatScore) {
+      if (!threatScore) {
+        return null;
+      }
+      return {
+        score: threatScore.score ?? 0,
+        label: threatScore.label ?? "MINIMAL",
+        colorClass: threatScore.colorClass || threatScore.color_class || "info",
+      };
+    }
+
+    function threatBadgeMarkup(threatScore, size = "small") {
+      const normalized = normalizeThreatScore(threatScore);
+      if (!normalized) {
+        return "";
+      }
+      const extraStyle = size === "large" ? "font-size:11px;padding:6px 10px;" : "";
+      return `<span class="threat-score-badge ${escapeHtml(normalized.colorClass)}" style="${extraStyle}">Threat ${escapeHtml(normalized.score)} · ${escapeHtml(normalized.label)}</span>`;
+    }
+
+    function showAttackMapHoverChip(node, event) {
+      if (!node || node.type !== "attacker") {
+        attackMapHoverChip.classList.remove("visible");
+        return;
+      }
+      const threatScore = normalizeThreatScore(node.threat_score || threatScoreLookup[node.id] || { score: 0, label: "MINIMAL", colorClass: "info" });
+      attackMapHoverChip.innerHTML = `
+        <span class="mono">${escapeHtml(node.id)}</span>
+        ${threatBadgeMarkup(threatScore)}
+      `;
+      const bounds = attackMapShell.getBoundingClientRect();
+      const offsetX = Math.min(Math.max(event.clientX - bounds.left + 12, 10), bounds.width - 180);
+      const offsetY = Math.min(Math.max(event.clientY - bounds.top - 16, 10), 340);
+      attackMapHoverChip.style.left = `${offsetX}px`;
+      attackMapHoverChip.style.top = `${offsetY}px`;
+      attackMapHoverChip.classList.add("visible");
+    }
+
+    function hideAttackMapHoverChip() {
+      attackMapHoverChip.classList.remove("visible");
+    }
+
+    function attackMapSkeletonMarkup() {
+      return `
+        <div class="attack-panel-header">
+          <div>
+            <div class="attack-map-skeleton">
+              <div class="attack-map-skeleton-bar medium"></div>
+              <div class="attack-map-skeleton-bar short"></div>
+            </div>
+          </div>
+          <button class="attack-panel-close" id="attack-map-close" type="button" aria-label="Close">×</button>
+        </div>
+        <div class="attack-panel-section">
+          <div class="attack-map-skeleton">
+            <div class="attack-map-skeleton-bar long"></div>
+            <div class="attack-map-skeleton-bar medium"></div>
+            <div class="attack-map-skeleton-bar short"></div>
+          </div>
+        </div>
+        <div class="attack-panel-section">
+          <div class="attack-map-skeleton">
+            <div class="attack-map-skeleton-bar long"></div>
+            <div class="attack-map-skeleton-bar medium"></div>
+            <div class="attack-map-skeleton-bar short"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    function bindAttackMapCloseButton() {
+      document.getElementById("attack-map-close")?.addEventListener("click", closeAttackMapPanel);
+    }
+
+    function closeAttackMapPanel() {
+      attackMapState.selectedIp = null;
+      attackMapState.selectedType = null;
+      attackMapShell.classList.remove("panel-open");
+      attackMapDetail.setAttribute("aria-hidden", "true");
+      attackMapPanel.innerHTML = '<div class="attack-panel-empty">Select a node to inspect attacker behavior and threat context.</div>';
+      hideAttackMapHoverChip();
+      if (attackMapState.payload) {
+        buildAttackMap(attackMapState.payload);
+      }
+    }
+
+    async function fetchAttackerProfile(ip) {
+      if (attackerProfileCache.has(ip)) {
+        return attackerProfileCache.get(ip);
+      }
+      const response = await fetch(`/api/attacker/${encodeURIComponent(ip)}/`);
+      if (!response.ok) {
+        throw new Error("Could not load profile data");
+      }
+      const data = await response.json();
+      attackerProfileCache.set(ip, data);
+      return data;
+    }
+
+    function renderAttackMapPanel(node, profile) {
+      const stage = profile?.kill_chain_stage || 0;
+      const stageName = stage ? stageStageName(stage) : "No confirmed stage";
+      const threatScore = normalizeThreatScore(profile?.threat_score || node.threat_score || threatScoreLookup[node.id] || { score: 0, label: "MINIMAL", colorClass: "info" });
+      const techniques = Array.isArray(profile?.techniques) ? profile.techniques.slice(0, 3) : [];
+      const aiAssessment = profile?.ai_analysis?.attack_pattern || "";
+      const firstSeen = profile?.first_seen ? formatShortTimestamp(profile.first_seen) : "-";
+
+      attackMapPanel.innerHTML = `
+        <div class="attack-panel-header">
+          <div>
+            <div class="attack-panel-ip ${node.type === "attacker" ? "attacker" : ""}">${escapeHtml(node.id)}</div>
+            ${threatBadgeMarkup(threatScore, "large")}
+          </div>
+          <button class="attack-panel-close" id="attack-map-close" type="button" aria-label="Close">×</button>
+        </div>
+
+        <section class="attack-panel-section">
+          <div class="attack-panel-title">Quick Stats</div>
+          <div class="attack-panel-stats">
+            <div class="attack-panel-chip">
+              <div class="attack-panel-chip-label">Total Alerts</div>
+              <div class="attack-panel-chip-value">${escapeHtml(profile?.total_alerts ?? node.total_alerts ?? 0)}</div>
+            </div>
+            <div class="attack-panel-chip">
+              <div class="attack-panel-chip-label">Total Incidents</div>
+              <div class="attack-panel-chip-value">${escapeHtml(profile?.total_incidents ?? 0)}</div>
+            </div>
+            <div class="attack-panel-chip">
+              <div class="attack-panel-chip-label">Kill Chain Stage</div>
+              <div class="attack-panel-chip-value">${stage ? `${stage} · ${escapeHtml(stageName)}` : "None"}</div>
+            </div>
+            <div class="attack-panel-chip">
+              <div class="attack-panel-chip-label">First Seen</div>
+              <div class="attack-panel-chip-value mono">${escapeHtml(firstSeen)}</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="attack-panel-section">
+          <div class="attack-panel-title">Kill Chain Progress</div>
+          <div class="attack-panel-killtrack">
+            ${Array.from({ length: 7 }, (_, index) => {
+              const current = index + 1;
+              const classes = ["attack-panel-killsegment"];
+              if (stage && current < stage) classes.push("complete");
+              if (stage && current === stage) classes.push("current");
+              return `<div class="${classes.join(" ")}"></div>`;
+            }).join("")}
+          </div>
+          <div class="attack-panel-killlabel">${stage ? `Stage ${stage}: ${escapeHtml(stageName)}` : "No stage confirmed yet"}</div>
+        </section>
+
+        <section class="attack-panel-section">
+          <div class="attack-panel-title">Top Techniques</div>
+          ${
+            techniques.length
+              ? `<div class="attack-panel-technique-list">
+                  ${techniques.map((technique) => `
+                    <div class="attack-panel-technique">
+                      <div class="attack-panel-technique-top">
+                        <span class="attack-panel-technique-id">${escapeHtml(technique.technique_id || "Unknown")}</span>
+                        <span class="attack-panel-technique-count">${escapeHtml(technique.count || 0)} alerts</span>
+                      </div>
+                      <div>${escapeHtml(technique.technique_name || "Technique not labeled")}</div>
+                    </div>
+                  `).join("")}
+                  <a class="table-link" href="/attacker/${encodeURIComponent(node.id)}/">View all &rarr;</a>
+                </div>`
+              : `<div class="attack-panel-empty">No MITRE techniques recorded for this IP.</div>`
+          }
+        </section>
+
+        <section class="attack-panel-section">
+          <div class="attack-panel-title">AI Assessment</div>
+          <div class="attack-panel-assessment">${escapeHtml(aiAssessment || "No AI assessment available for this IP.")}</div>
+        </section>
+
+        <section class="attack-panel-section">
+          <div class="attack-panel-title">Actions</div>
+          <div class="attack-panel-actions">
+            <a class="attack-panel-action" href="/attacker/${encodeURIComponent(node.id)}/">View Full Profile &rarr;</a>
+            <a class="attack-panel-action" href="/?ip=${encodeURIComponent(node.id)}">View Incidents &rarr;</a>
+          </div>
+        </section>
+      `;
+      bindAttackMapCloseButton();
+    }
+
+    function renderAttackMapError(node) {
+      attackMapPanel.innerHTML = `
+        <div class="attack-panel-header">
+          <div>
+            <div class="attack-panel-ip ${node.type === "attacker" ? "attacker" : ""}">${escapeHtml(node.id)}</div>
+          </div>
+          <button class="attack-panel-close" id="attack-map-close" type="button" aria-label="Close">×</button>
+        </div>
+        <div class="attack-panel-section">
+          <div class="attack-panel-empty">Could not load profile data.</div>
+          <div class="attack-panel-actions" style="margin-top:12px;">
+            <button class="attack-panel-action" id="attack-map-retry" type="button">Retry</button>
+          </div>
+        </div>
+      `;
+      bindAttackMapCloseButton();
+      document.getElementById("attack-map-retry")?.addEventListener("click", () => openAttackMapPanel(node));
+    }
+
+    async function openAttackMapPanel(node) {
+      attackMapState.selectedIp = node.id;
+      attackMapState.selectedType = node.type;
+      attackMapShell.classList.add("panel-open");
+      attackMapDetail.setAttribute("aria-hidden", "false");
+      attackMapPanel.innerHTML = attackMapSkeletonMarkup();
+      bindAttackMapCloseButton();
+      hideAttackMapHoverChip();
+
+      try {
+        const profile = await fetchAttackerProfile(node.id);
+        if (attackMapState.selectedIp !== node.id) {
+          return;
+        }
+        renderAttackMapPanel(node, profile);
+      } catch {
+        if (attackMapState.selectedIp !== node.id) {
+          return;
+        }
+        renderAttackMapError(node);
+      }
+
+      if (attackMapState.payload) {
+        buildAttackMap(attackMapState.payload);
+      }
+    }
+
+    function stageStageName(stage) {
+      const stageNames = {
+        1: "Reconnaissance",
+        2: "Weaponization",
+        3: "Delivery",
+        4: "Exploitation",
+        5: "Installation",
+        6: "Command & Control",
+        7: "Actions on Objectives",
+      };
+      return stageNames[stage] || "Unknown";
+    }
+
+    function formatShortTimestamp(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+      return date.toISOString().replace("T", " ").slice(5, 19) + " UTC";
+    }
+
+    async function buildAttackMap(payload) {
+      attackMapState.payload = payload;
+      const svg = d3.select("#attack-map");
+      const viewport = document.querySelector(".attack-map-viewport");
+      const width = viewport?.getBoundingClientRect().width || svg.node().getBoundingClientRect().width || 1000;
+      const height = 380;
+      svg.selectAll("*").remove();
+      svg.attr("viewBox", `0 0 ${width} ${height}`);
+      svg.attr("width", width).attr("height", height);
+
+      const incidents = payload.incidents || [];
+      const hosts = payload.hosts || [];
+      const attackerIps = [...new Set(incidents.map((item) => item.src_ip).filter(Boolean))];
+      const hostIps = [...new Set(hosts.map((host) => host.ip_address).filter(Boolean))];
+      const victimIps = hostIps.filter((ip) => !attackerIps.includes(ip));
+
+      const incidentTotals = incidents.reduce((acc, incident) => {
+        const key = incident.src_ip;
+        if (!key) {
+          return acc;
+        }
+        if (!acc[key]) {
+          acc[key] = {
+            total_alerts: 0,
+            max_cvss: 0,
+            total_incidents: 0,
+          };
+        }
+        acc[key].total_alerts += Number(incident.alert_count || 0);
+        acc[key].total_incidents += 1;
+        acc[key].max_cvss = Math.max(acc[key].max_cvss, Number(incident.cvss_score || 0));
+        return acc;
+      }, {});
+
+      await Promise.all(
+        attackerIps.map(async (ip) => {
+          try {
+            await fetchAttackerProfile(ip);
+          } catch {
+            return null;
+          }
+          return null;
+        })
+      );
+
+      const attackerRadius = d3.scaleSqrt()
+        .domain([0, d3.max(Object.values(incidentTotals), (item) => item.total_alerts) || 1])
+        .range([12, 28]);
+
+      const nodeMap = new Map();
+      attackerIps.forEach((ip) => {
+        const profile = attackerProfileCache.get(ip);
+        nodeMap.set(ip, {
+          id: ip,
+          type: "attacker",
+          radius: attackerRadius(incidentTotals[ip]?.total_alerts || 0),
+          total_alerts: incidentTotals[ip]?.total_alerts || 0,
+          total_incidents: incidentTotals[ip]?.total_incidents || 0,
+          threat_score: normalizeThreatScore(profile?.threat_score || threatScoreLookup[ip] || null),
+          kill_chain_stage: profile?.kill_chain_stage || 0,
+        });
+      });
+
+      victimIps.forEach((ip) => {
+        if (!nodeMap.has(ip)) {
+          nodeMap.set(ip, {
+            id: ip,
+            type: "victim",
+            radius: 10,
+            total_alerts: 0,
+            total_incidents: 0,
+            threat_score: null,
+            kill_chain_stage: 0,
+          });
+        }
+      });
+
+      let fallbackVictims = victimIps.length ? victimIps : hostIps.filter((ip) => !attackerIps.includes(ip));
+      if (!fallbackVictims.length && attackerIps.length) {
+        fallbackVictims = attackerIps.map((ip, index) => `target-${index + 1}`);
+        fallbackVictims.forEach((ip) => {
+          if (!nodeMap.has(ip)) {
+            nodeMap.set(ip, {
+              id: ip,
+              type: "victim",
+              radius: 10,
+              total_alerts: 0,
+              total_incidents: 0,
+              threat_score: null,
+              kill_chain_stage: 0,
+            });
+          }
+        });
+      }
+      const edgeMap = new Map();
+      incidents.forEach((incident, index) => {
+        if (!incident.src_ip || !fallbackVictims.length) {
+          return;
+        }
+        const targetIp = fallbackVictims[index % fallbackVictims.length];
+        if (!targetIp || targetIp === incident.src_ip) {
+          return;
+        }
+        if (!nodeMap.has(targetIp)) {
+          nodeMap.set(targetIp, {
+            id: targetIp,
+            type: "victim",
+            radius: 10,
+            total_alerts: 0,
+            total_incidents: 0,
+            threat_score: null,
+            kill_chain_stage: 0,
+          });
+        }
+        const key = `${incident.src_ip}=>${targetIp}`;
+        const existing = edgeMap.get(key) || {
+          source: incident.src_ip,
+          target: targetIp,
+          cvss: 0,
+          alert_count: 0,
+        };
+        existing.cvss = Math.max(existing.cvss, Number(incident.cvss_score || 0));
+        existing.alert_count += Number(incident.alert_count || 0);
+        edgeMap.set(key, existing);
+      });
+
+      const nodes = [...nodeMap.values()];
+      const links = [...edgeMap.values()];
+      if (!nodes.length || !links.length) {
+        svg.append("text")
+          .attr("x", width / 2)
+          .attr("y", height / 2)
+          .attr("fill", "var(--muted)")
+          .attr("text-anchor", "middle")
+          .style("font-family", '"JetBrains Mono", monospace')
+          .style("font-size", "11px")
+          .text("No network relationships available");
+        return;
+      }
+
+      const strokeScale = d3.scaleLinear()
+        .domain([0, d3.max(links, (item) => item.alert_count) || 1])
+        .range([1, 4]);
+
+      const defs = svg.append("defs");
+      [
+        { id: "arrow-success", color: getComputedStyle(document.documentElement).getPropertyValue("--success").trim() },
+        { id: "arrow-warning", color: getComputedStyle(document.documentElement).getPropertyValue("--warning").trim() },
+        { id: "arrow-danger", color: getComputedStyle(document.documentElement).getPropertyValue("--danger").trim() },
+      ].forEach((marker) => {
+        defs.append("marker")
+          .attr("id", marker.id)
+          .attr("viewBox", "0 0 8 8")
+          .attr("refX", 7)
+          .attr("refY", 4)
+          .attr("markerWidth", 7)
+          .attr("markerHeight", 7)
+          .attr("orient", "auto-start-reverse")
+          .append("path")
+          .attr("d", "M0,0 L8,4 L0,8 z")
+          .attr("fill", marker.color);
+      });
+
+      const root = svg.append("g");
+      const linkLayer = root.append("g");
+      const nodeLayer = root.append("g");
+
+      const simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links).id((d) => d.id).distance(170).strength(0.55))
+        .force("charge", d3.forceManyBody().strength(-760))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("x", d3.forceX(width / 2).strength(0.08))
+        .force("y", d3.forceY(height / 2).strength(0.08))
+        .force("collision", d3.forceCollide().radius((d) => d.radius + 26));
+
+      const link = linkLayer
+        .selectAll("line")
+        .data(links)
+        .join("line")
+        .attr("class", (d) => `graph-link${d.cvss >= 7 ? " edge-critical" : ""}`)
+        .attr("stroke-width", (d) => strokeScale(d.alert_count))
+        .attr("stroke", (d) => cvssColor(d.cvss))
+        .attr("marker-end", (d) => {
+          if (d.cvss >= 7) return "url(#arrow-danger)";
+          if (d.cvss >= 4) return "url(#arrow-warning)";
+          return "url(#arrow-success)";
+        });
+
+      const node = nodeLayer
+        .selectAll("g")
+        .data(nodes)
+        .join("g")
+        .attr("tabindex", 0)
+        .style("cursor", "pointer")
+        .call(
+          d3.drag()
+            .on("start", (event, d) => {
+              if (!event.active) simulation.alphaTarget(0.18).restart();
+              d.fx = d.x;
+              d.fy = d.y;
+            })
+            .on("drag", (event, d) => {
+              d.fx = event.x;
+              d.fy = event.y;
+            })
+            .on("end", (event, d) => {
+              if (!event.active) simulation.alphaTarget(0);
+              d.fx = null;
+              d.fy = null;
+            })
+        );
+
+      node.filter((d) => d.type === "attacker")
+        .append("circle")
+        .attr("r", (d) => d.radius + 4)
+        .attr("fill", "none")
+        .attr("stroke-width", 2)
+        .attr("stroke", (d) => stageRingColor(d.kill_chain_stage));
+
+      node.append("circle")
+        .attr("class", "graph-node")
+        .attr("r", (d) => d.radius)
+        .attr("fill", (d) => d.type === "attacker" ? "var(--danger)" : "var(--accent)");
+
+      node.append("text")
+        .attr("class", "graph-label")
+        .attr("text-anchor", "middle")
+        .attr("dy", (d) => d.radius + 16)
+        .text((d) => d.id);
+
+      node
+        .on("mouseenter", function(event, d) {
+          showAttackMapHoverChip(d, event);
+          d3.select(this).select("circle.graph-node").attr("stroke-width", 1.4);
+        })
+        .on("mousemove", (event, d) => showAttackMapHoverChip(d, event))
+        .on("mouseleave", function() {
+          hideAttackMapHoverChip();
+          d3.select(this).select("circle.graph-node").attr("stroke-width", 1);
+        })
+        .on("click", (_, d) => openAttackMapPanel(d))
+        .on("keydown", (event, d) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openAttackMapPanel(d);
+          }
+        });
+
+      simulation.on("tick", () => {
+        link
+          .attr("x1", (d) => d.source.x)
+          .attr("y1", (d) => d.source.y)
+          .attr("x2", (d) => d.target.x)
+          .attr("y2", (d) => d.target.y);
+
+        node.attr("transform", (d) => `translate(${d.x}, ${d.y})`);
+      });
+
+      if (attackMapState.selectedIp) {
+        attackMapShell.classList.add("panel-open");
+        attackMapDetail.setAttribute("aria-hidden", "false");
+      }
+    }
+
+    function buildTimeline(payload) {
+      const svg = d3.select("#timeline-chart");
+      const width = svg.node().getBoundingClientRect().width || 1000;
+      const height = 180;
+      const margin = { top: 8, right: 14, bottom: 34, left: 42 };
+      svg.selectAll("*").remove();
+      svg.attr("viewBox", `0 0 ${width} ${height}`);
+
+      const chart = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+      const innerWidth = width - margin.left - margin.right;
+      const innerHeight = height - margin.top - margin.bottom;
+      const timeline = payload.timeline || [];
+
+      if (!timeline.length) {
+        chart.append("text")
+          .attr("x", innerWidth / 2)
+          .attr("y", innerHeight / 2)
+          .attr("fill", "var(--muted)")
+          .attr("text-anchor", "middle")
+          .text("No timeline data available");
+        return;
+      }
+
+      const maxCount = Math.max(...timeline.map((item) => item.count), 1);
+      const x = d3.scaleBand()
+        .domain(timeline.map((item) => item.hour))
+        .range([0, innerWidth])
+        .padding(0.18);
+
+      const y = d3.scaleLinear()
+        .domain([0, maxCount])
+        .nice()
+        .range([innerHeight, 0]);
+
+      const colorScale = d3.scaleLinear()
+        .domain([0, maxCount * 0.55, maxCount])
+        .range(["#58a6ff", "#d29922", "#f85149"]);
+
+      chart.append("g")
+        .selectAll("line")
+        .data(y.ticks(4))
+        .join("line")
+        .attr("class", "grid-line")
+        .attr("x1", 0)
+        .attr("x2", innerWidth)
+        .attr("y1", (d) => y(d))
+        .attr("y2", (d) => y(d));
+
+      chart.selectAll("rect")
+        .data(timeline)
+        .join("rect")
+        .attr("x", (d) => x(d.hour))
+        .attr("y", (d) => y(d.count))
+        .attr("width", x.bandwidth())
+        .attr("height", (d) => innerHeight - y(d.count))
+        .attr("rx", 4)
+        .attr("fill", (d) => colorScale(d.count));
+
+      chart.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(0,${innerHeight})`)
+        .call(d3.axisBottom(x).tickValues(timeline.filter((_, index) => index % 2 === 0).map((item) => item.hour)))
+        .call((g) => g.selectAll("text")
+          .style("fill", "var(--muted)")
+          .style("font-family", '"JetBrains Mono", monospace')
+          .style("font-size", "9px"))
+        .call((g) => g.selectAll("path, line").attr("stroke", "var(--border)"));
+
+      chart.append("g")
+        .attr("class", "axis")
+        .call(d3.axisLeft(y).ticks(4))
+        .call((g) => g.selectAll("text")
+          .style("fill", "var(--muted)")
+          .style("font-family", '"JetBrains Mono", monospace')
+          .style("font-size", "9px"))
+        .call((g) => g.selectAll("path, line").attr("stroke", "var(--border)"));
+    }
+
+    const chatFab = document.getElementById("chat-fab");
+    const chatPanel = document.getElementById("chat-panel");
+    const chatClose = document.getElementById("chat-close");
+    const chatMessages = document.getElementById("chat-messages");
+    const chatEmpty = document.getElementById("chat-empty");
+    const chatInput = document.getElementById("chat-input");
+    const chatSend = document.getElementById("chat-send");
+    const CHAT_HISTORY_KEY = "pathtracer.chat.history";
+    const CHAT_OPEN_KEY = "pathtracer.chat.open";
+    const CHAT_DRAFT_KEY = "pathtracer.chat.draft";
+    const killChainBanner = document.getElementById("killchain-banner");
+    const killChainBannerText = document.getElementById("killchain-banner-text");
+    const chatHistory = [];
+
+    function loadChatHistory() {
+      try {
+        const stored = JSON.parse(localStorage.getItem(CHAT_HISTORY_KEY) || "[]");
+        if (!Array.isArray(stored)) {
+          return [];
+        }
+        return stored
+          .filter((item) => item && (item.role === "user" || item.role === "assistant") && typeof item.content === "string")
+          .map((item) => ({ role: item.role, content: item.content }));
+      } catch {
+        return [];
+      }
+    }
+
+    function saveChatHistory() {
+      localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatHistory.slice(-30)));
+    }
+
+    function saveChatOpenState(isOpen) {
+      localStorage.setItem(CHAT_OPEN_KEY, JSON.stringify(isOpen));
+    }
+
+    function saveChatDraft(value) {
+      localStorage.setItem(CHAT_DRAFT_KEY, value);
+    }
+
+    function loadChatDraft() {
+      return localStorage.getItem(CHAT_DRAFT_KEY) || "";
+    }
+
+    function loadChatOpenState() {
+      const stored = localStorage.getItem(CHAT_OPEN_KEY);
+      if (stored === null) {
+        return true;
+      }
+      try {
+        return JSON.parse(stored) !== false;
+      } catch {
+        return true;
+      }
+    }
+
+    function getCsrfToken() {
+      return document.cookie
+        .split("; ")
+        .find((row) => row.startsWith("csrftoken="))
+        ?.split("=")[1];
+    }
+
+    function toggleChat(forceOpen) {
+      const nextState = typeof forceOpen === "boolean"
+        ? forceOpen
+        : !chatPanel.classList.contains("open");
+      chatPanel.classList.toggle("open", nextState);
+      chatPanel.setAttribute("aria-hidden", String(!nextState));
+      chatFab.classList.toggle("hidden", nextState);
+      saveChatOpenState(nextState);
+      if (nextState) {
+        chatInput.focus();
+      }
+    }
+
+    function appendMessage(role, content) {
+      if (chatEmpty) {
+        chatEmpty.remove();
+      }
+
+      const wrapper = document.createElement("div");
+      wrapper.className = `chat-message ${role}`;
+
+      const meta = document.createElement("div");
+      meta.className = "chat-meta";
+      meta.textContent = role === "user" ? "Analyst" : "PathTracer AI";
+
+      const bubble = document.createElement("div");
+      bubble.className = "chat-bubble";
+      bubble.textContent = content;
+
+      wrapper.appendChild(meta);
+      wrapper.appendChild(bubble);
+
+      chatMessages.appendChild(wrapper);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function rebuildChatFromHistory() {
+      chatMessages.innerHTML = "";
+      if (!chatHistory.length) {
+        const empty = document.createElement("div");
+        empty.className = "chat-empty";
+        empty.id = "chat-empty";
+        empty.textContent = "Ask about alerts, incidents, IPs, severity trends, or suspicious activity in plain English.";
+        chatMessages.appendChild(empty);
+        return;
+      }
+
+      chatHistory.forEach((item) => {
+        appendMessage(item.role, item.content);
+      });
+    }
+
+    function setLoadingState(isLoading) {
+      chatSend.disabled = isLoading;
+      chatInput.disabled = isLoading;
+      if (isLoading) {
+        appendMessage("assistant", "Analyzing...");
+      }
+    }
+
+    function removeLoadingState() {
+      const messages = [...chatMessages.querySelectorAll(".chat-message.assistant")];
+      const last = messages[messages.length - 1];
+      if (last) {
+        const bubble = last.querySelector(".chat-bubble");
+        const meta = last.querySelector(".chat-meta");
+        if (bubble && bubble.textContent === "Analyzing..." && meta && meta.textContent === "PathTracer AI") {
+          last.remove();
+        }
+      }
+      chatSend.disabled = false;
+      chatInput.disabled = false;
+      chatInput.focus();
+    }
+
+    async function sendChat() {
+      const question = chatInput.value.trim();
+      if (!question || chatSend.disabled) {
+        return;
+      }
+
+      toggleChat(true);
+      appendMessage("user", question);
+      chatHistory.push({ role: "user", content: question });
+      saveChatHistory();
+      chatInput.value = "";
+      chatInput.style.height = "42px";
+      saveChatDraft("");
+      setLoadingState(true);
+
+      try {
+        const response = await fetch("/api/chat/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCsrfToken(),
+          },
+          body: JSON.stringify({
+            question,
+            history: chatHistory.slice(-4),
+          }),
+        });
+
+        const payload = await response.json();
+        removeLoadingState();
+
+        if (!response.ok) {
+          const errorMessage = payload.error || "Chat request failed.";
+          appendMessage("assistant", errorMessage);
+          chatHistory.push({ role: "assistant", content: errorMessage });
+          saveChatHistory();
+          return;
+        }
+
+        appendMessage("assistant", payload.answer || "No answer returned.");
+        chatHistory.push({ role: "assistant", content: payload.answer || "" });
+        saveChatHistory();
+      } catch (error) {
+        removeLoadingState();
+        const errorMessage = `Request failed: ${error.message}`;
+        appendMessage("assistant", errorMessage);
+        chatHistory.push({ role: "assistant", content: errorMessage });
+        saveChatHistory();
+      }
+    }
+
+    loadChatHistory().forEach((item) => chatHistory.push(item));
+    saveChatHistory();
+    rebuildChatFromHistory();
+    chatInput.value = loadChatDraft();
+    chatInput.style.height = "42px";
+    chatInput.style.height = `${Math.min(chatInput.scrollHeight, 110)}px`;
+    toggleChat(loadChatOpenState());
+
+    chatFab.addEventListener("click", () => toggleChat());
+    chatClose.addEventListener("click", () => toggleChat(false));
+    document.querySelectorAll(".incident-row[data-href]").forEach((row) => {
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("a")) {
+          return;
+        }
+        window.location.href = row.dataset.href;
+      });
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          window.location.href = row.dataset.href;
+        }
+      });
+    });
+    chatSend.addEventListener("click", sendChat);
+    chatInput.addEventListener("input", () => {
+      chatInput.style.height = "42px";
+      chatInput.style.height = `${Math.min(chatInput.scrollHeight, 110)}px`;
+      saveChatDraft(chatInput.value);
+    });
+    chatInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendChat();
+      }
+    });
+    window.addEventListener("storage", (event) => {
+      if (event.key === CHAT_HISTORY_KEY) {
+        chatHistory.splice(0, chatHistory.length, ...loadChatHistory());
+        rebuildChatFromHistory();
+      }
+      if (event.key === CHAT_OPEN_KEY) {
+        const open = loadChatOpenState();
+        chatPanel.classList.toggle("open", open);
+        chatPanel.setAttribute("aria-hidden", String(!open));
+        chatFab.classList.toggle("hidden", open);
+      }
+      if (event.key === CHAT_DRAFT_KEY && document.activeElement !== chatInput) {
+        chatInput.value = loadChatDraft();
+        chatInput.style.height = "42px";
+        chatInput.style.height = `${Math.min(chatInput.scrollHeight, 110)}px`;
+      }
+    });
+
+    async function refreshDashboardVisuals() {
+      try {
+        const [incidentData, timelineData] = await Promise.all([
+          fetch("/api/incidents/").then((response) => response.json()),
+          fetch("/api/timeline/").then((response) => response.json()),
+        ]);
+        await buildAttackMap(incidentData);
+        buildTimeline(timelineData);
+      } catch {
+        d3.select("#attack-map").selectAll("*").remove();
+        d3.select("#attack-map").append("text")
+          .attr("x", 500)
+          .attr("y", 180)
+          .attr("fill", "var(--muted)")
+          .attr("text-anchor", "middle")
+          .text("Failed to load dashboard telemetry");
+      }
+    }
+
+    async function refreshKillChainBanner() {
+      if (!killChainBanner || !killChainBanner.dataset.ip) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/killchain/${killChainBanner.dataset.ip}/`);
+        const data = await response.json();
+        if ((data.current_stage || 0) >= 3) {
+          killChainBanner.classList.add("visible");
+          killChainBannerText.textContent =
+            `ACTIVE THREAT — ${data.ip} at Kill Chain Stage ${data.current_stage} (${data.current_stage_name}). ${data.next_stage_name} attempt expected.`;
+        } else {
+          killChainBanner.classList.remove("visible");
+        }
+      } catch {
+        killChainBanner.classList.remove("visible");
+      }
+    }
+
+    function shouldPauseRefresh() {
+      return document.hidden || chatSend.disabled || chatInput.value.trim().length > 0;
+    }
+
+    refreshDashboardVisuals();
+    refreshKillChainBanner();
+    setInterval(() => {
+      if (!shouldPauseRefresh()) {
+        refreshDashboardVisuals();
+        refreshKillChainBanner();
+      }
+    }, 30000);
+
+    window.addEventListener("resize", refreshDashboardVisuals);
+

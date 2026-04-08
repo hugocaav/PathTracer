@@ -120,4 +120,4 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "your-key-here")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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")
