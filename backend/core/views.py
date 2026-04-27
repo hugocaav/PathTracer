@@ -1,12 +1,9 @@
-import json as _json
-import os
-
 from django.db.models import Count
 from django.db.models.functions import TruncHour
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
-from django.views.decorators.csrf import csrf_exempt
+
 from .models import Alert, Host, Incident
 from .services.ai import get_groq_client
 from .services.chat import process_chat_request
@@ -64,21 +61,7 @@ def incident_detail(request, pk):
 
 def api_incidents(request):
     """Return incidents and known hosts for dashboard visualizations."""
-    import ipaddress
-
-    def is_noise_ip(ip):
-        try:
-            addr = ipaddress.ip_address(ip)
-            return (
-                addr.is_unspecified
-                or str(addr) == "255.255.255.255"
-                or str(addr).endswith(".0")
-                or str(addr).endswith(".255")
-            )
-        except ValueError:
-            return True
-
-    incidents_list = list(Incident.objects.all().order_by("-id").values(
+    incidents = Incident.objects.all().values(
         "id",
         "src_ip",
         "alert_count",
@@ -86,18 +69,10 @@ def api_incidents(request):
         "technique_id",
         "technique_name",
         "status",
-    )[:50])
-    shown_src_ips = {i["src_ip"] for i in incidents_list}
-    active_dest_ips = (
-        Alert.objects.filter(src_ip__in=shown_src_ips)
-        .values_list("dest_ip", flat=True)
-        .distinct()
     )
-    hosts = Host.objects.filter(
-        ip_address__in=active_dest_ips
-    ).values("ip_address", "hostname")
-    hosts = [h for h in hosts if not is_noise_ip(h["ip_address"])]
-    return JsonResponse({"incidents": incidents_list, "hosts": hosts})
+    hosts = Host.objects.all().values("ip_address", "hostname")
+    return JsonResponse({"incidents": list(incidents), "hosts": list(hosts)})
+
 
 def api_alerts(request):
     """Return recent alerts for the dashboard table."""
@@ -215,26 +190,3 @@ def api_attacker_profile(request, ip):
     if request.method != "GET":
         return JsonResponse({"error": "GET required"}, status=405)
     return JsonResponse(get_attacker_profile_data(ip), json_dumps_params={"default": str})
-
-@csrf_exempt
-def api_ingest_alerts(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "POST required"}, status=405)
-    
-    allowed = os.environ.get("INGEST_ALLOWED_IPS", "")
-    if allowed != "*":
-        allowed_list = [ip.strip() for ip in allowed.split(",") if ip.strip()]
-        if request.META.get("REMOTE_ADDR") not in allowed_list:
-            return JsonResponse({"error": "ip not allowed"}, status=403)
-    
-    try:
-        body = _json.loads(request.body)
-        events = body.get("events", [])
-        if not isinstance(events, list):
-            raise ValueError
-    except Exception:
-        return JsonResponse({"error": "invalid body"}, status=400)
-    
-    from .services.ingestion import parse_and_persist
-    counts = parse_and_persist(events)
-    return JsonResponse(counts)
