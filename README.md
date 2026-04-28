@@ -19,6 +19,13 @@ visualization and incident response.
 ## Setup
 Documentation in `/docs`
 
+Run 
+python manage.py runserver 0.0.0.0:8000 
+to listen on the network.
+
+Add alowed devices via
+ALLOWED_HOSTS in settings.py
+
 ## Project Structure
 ```
 PathTracer/
