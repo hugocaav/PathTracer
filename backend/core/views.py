@@ -143,7 +143,9 @@ def api_alerts(request):
     """Return recent alerts for the dashboard table."""
     show_all = request.GET.get("all") == "1"
     qs = Alert.objects.all().order_by("-timestamp")
-    if not show_all:
+    if show_all:
+        qs = qs[:1000]
+    else:
         qs = qs[:100]
     alerts = qs.values(
         "id",
