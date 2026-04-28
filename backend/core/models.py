@@ -31,6 +31,11 @@ class Alert(models.Model):
     raw_json = models.JSONField()
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["src_ip", "timestamp", "signature"]),
+        ]
+
     def __str__(self):
         return f"{self.timestamp} | {self.signature} | {self.src_ip}"
 
@@ -57,6 +62,11 @@ class Incident(models.Model):
         default='open'
     )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["src_ip", "status", "start_time"]),
+        ]
 
     def __str__(self):
         return f"Incident {self.id} | {self.src_ip} | {self.alert_count} alerts"
