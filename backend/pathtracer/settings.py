@@ -26,7 +26,7 @@ SECRET_KEY = "django-insecure-th-@*1=qy0bcd0#++bwhs3im97iulwct@oak+7v)uz0#z^n#a^
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['192.168.1.226','192.168.1.156','localhost']
 
 
 # Application definition
@@ -121,3 +121,11 @@ STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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")
+
+# Ingestion endpoint config. Empty list => endpoint rejects every request (fail-closed).
+# Set INGEST_ALLOWED_IPS env var to a comma-separated list of agent IPs, or "*" to allow any.
+INGEST_ALLOWED_IPS = [
+    s.strip() for s in os.environ.get("INGEST_ALLOWED_IPS", "").split(",") if s.strip()
+]
+
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024

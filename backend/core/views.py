@@ -1,10 +1,17 @@
+import json
+import logging
+
+from django.conf import settings
 from django.db.models import Count
 from django.db.models.functions import TruncHour
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 
 from .models import Alert, Host, Incident
+from .services import ingestion
 from .services.ai import get_groq_client
 from .services.chat import process_chat_request
 from .services.threats import (
@@ -13,6 +20,64 @@ from .services.threats import (
     calculate_threat_score,
     get_attacker_profile_data,
 )
+
+
+logger = logging.getLogger(__name__)
+
+
+def _ip_allowed(request) -> bool:
+    """Whitelist agent IPs against settings.INGEST_ALLOWED_IPS.
+    Empty list -> reject everything (fail-closed). '*' allows any."""
+    allowlist = getattr(settings, "INGEST_ALLOWED_IPS", []) or []
+    if not allowlist:
+        return False
+    if "*" in allowlist:
+        return True
+    return request.META.get("REMOTE_ADDR") in allowlist
+
+
+@csrf_exempt
+@require_POST
+def api_ingest(request):
+    """Receive a batch of Suricata alert events from a host agent."""
+    # TEMP-DEBUG: trace per-request behavior. Remove once integration is stable.
+    remote = request.META.get("REMOTE_ADDR")
+    body_len = len(request.body)
+    print(f"[INGEST] hit  remote={remote} body_bytes={body_len}", flush=True)
+
+    if not _ip_allowed(request):
+        print(f"[INGEST] reject 403  remote={remote} (not in allowlist)", flush=True)
+        return JsonResponse({"error": "ip not allowed"}, status=403)
+
+    if body_len > settings.DATA_UPLOAD_MAX_MEMORY_SIZE:
+        print(f"[INGEST] reject 413  body_bytes={body_len}", flush=True)
+        return JsonResponse({"error": "payload too large"}, status=413)
+
+    try:
+        payload = json.loads(request.body)
+        events = payload["events"]
+        if not isinstance(events, list):
+            raise ValueError("events must be a list")
+    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+        print(f"[INGEST] reject 400  parse_error={e}", flush=True)
+        return JsonResponse({"error": "invalid body"}, status=400)
+
+    if len(events) > ingestion.MAX_BATCH:
+        print(f"[INGEST] reject 413  batch_size={len(events)} max={ingestion.MAX_BATCH}", flush=True)
+        return JsonResponse(
+            {"error": f"batch too large (max {ingestion.MAX_BATCH})"}, status=413
+        )
+
+    print(f"[INGEST] parsed  events={len(events)} -> calling parse_and_persist", flush=True)
+    try:
+        result = ingestion.parse_and_persist(events)
+    except Exception as e:
+        print(f"[INGEST] 500  exception={e}", flush=True)
+        logger.exception("ingest failed")
+        return JsonResponse({"error": str(e)}, status=500)
+
+    print(f"[INGEST] done  {result}", flush=True)
+    return JsonResponse(result, status=200)
 
 
 def dashboard(request):

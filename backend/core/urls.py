@@ -12,4 +12,5 @@ urlpatterns = [
     path('api/killchain/<str:ip>/', views.analyze_kill_chain, name='kill_chain'),
     path('api/incidents/<int:pk>/summary/', views.generate_ai_summary, name='generate_ai_summary'),
     path('api/timeline/', views.api_timeline, name='api_timeline'),
+    path('api/ingest/alerts/', views.api_ingest, name='api_ingest'),
 ]
