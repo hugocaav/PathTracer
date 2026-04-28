@@ -9,8 +9,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <style>
-    {% include 'core/partials/dashboard/styles.html' %}
+  <style>
+
+    {% include 'core/partials/dashboard/styles.html' %}
+
   </style>
 </head>
 <body>
@@ -142,12 +144,38 @@
     </section>
 
     <section class="panel">
-      <div class="panel-header">
+      <div class="panel-header" style="flex-wrap:wrap;gap:10px;">
         <div class="panel-title">Recent Alerts</div>
-        <div class="card-subtle">Latest 50 events</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
+          <span class="card-subtle" id="alert-count-label">Latest 50 events</span>
+          <button id="show-all-btn" onclick="toggleShowAll()" style="
+            font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;
+            letter-spacing:.06em;text-transform:uppercase;
+            background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);
+            color:var(--text-muted,#8496b8);border-radius:6px;padding:3px 10px;cursor:pointer;
+            transition:all .15s;
+          ">Show All</button>
+        </div>
       </div>
-      <div class="table-shell">
-        <table>
+      <div style="display:flex;align-items:center;gap:8px;padding:10px 16px 0;">
+        <input id="alert-search" type="text" placeholder="Search IP, signature, date..."
+          oninput="filterAlerts()"
+          style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
+            border-radius:8px;padding:7px 12px;color:var(--text,#cdd8ee);font-family:'JetBrains Mono',monospace;
+            font-size:11px;outline:none;transition:border-color .15s;"
+          onfocus="this.style.borderColor='rgba(143,130,249,.5)'"
+          onblur="this.style.borderColor='rgba(255,255,255,.1)'"
+        />
+        <div style="display:flex;gap:4px;">
+          <button class="sev-filter active" data-sev="all" onclick="setSevFilter('all',this)">ALL</button>
+          <button class="sev-filter" data-sev="1" onclick="setSevFilter('1',this)">HIGH</button>
+          <button class="sev-filter" data-sev="2" onclick="setSevFilter('2',this)">MED</button>
+          <button class="sev-filter" data-sev="3" onclick="setSevFilter('3',this)">LOW</button>
+          <button class="sev-filter" data-sev="4" onclick="setSevFilter('4',this)">INFO</button>
+        </div>
+      </div>
+      <div class="table-shell" style="margin-top:8px;">
+        <table id="alert-table">
           <thead>
             <tr>
               <th class="table-index">#</th>
@@ -158,9 +186,10 @@
               <th>Severity</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="alert-tbody">
             {% for alert in alerts %}
-              <tr>
+              <tr data-sev="{{ alert.severity }}"
+                  data-search="{{ alert.signature|lower }} {{ alert.src_ip }} {{ alert.dest_ip }} {{ alert.timestamp|date:"M d H:i:s" }}">
                 <td class="table-index">{{ forloop.counter }}</td>
                 <td class="time-cell">{{ alert.timestamp|date:"M d H:i:s" }}</td>
                 <td class="signature-cell">{{ alert.signature }}</td>
@@ -168,27 +197,34 @@
                 <td class="ip-cell">{{ alert.dest_ip }}</td>
                 <td>
                   {% if alert.severity == 1 %}
-                    <span class="severity-badge high">High</span>
+                    <span class="severity-badge high">HIGH</span>
                   {% elif alert.severity == 2 %}
-                    <span class="severity-badge medium">Med</span>
+                    <span class="severity-badge medium">MED</span>
                   {% elif alert.severity == 3 %}
-                    <span class="severity-badge low">Low</span>
+                    <span class="severity-badge low">LOW</span>
                   {% else %}
-                    <span class="severity-badge info">Info</span>
+                    <span class="severity-badge info">INFO</span>
                   {% endif %}
                 </td>
               </tr>
             {% empty %}
-              <tr>
-                <td colspan="6">
-                  <div class="empty-state">No alerts available.</div>
-                </td>
-              </tr>
+              <tr><td colspan="6"><div class="empty-state">No alerts available.</div></td></tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
     </section>
+
+    <style>
+    .sev-filter {
+      font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;
+      letter-spacing:.08em;text-transform:uppercase;
+      background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
+      color:#6b7fa0;border-radius:6px;padding:5px 10px;cursor:pointer;transition:all .15s;
+    }
+    .sev-filter:hover { color:#cdd8ee; border-color:rgba(255,255,255,.2); }
+    .sev-filter.active { background:rgba(143,130,249,.15); border-color:rgba(143,130,249,.4); color:#c0baff; }
+    </style>
   </div>
 
   <button class="chat-fab" id="chat-fab" type="button" aria-label="Open analyst chat">
@@ -216,11 +252,86 @@
     </div>
   </section>
 
-  <script>
-    {% include 'core/partials/dashboard/script.html' %}
-  </script>
+  <script>
+
+    {% include 'core/partials/dashboard/script.html' %}
+
+    // ── Alert table: search + severity filter + show all ──────────────────
+    let _sevFilter = 'all';
+    let _showingAll = false;
+    let _allAlerts = null;
+
+    function setSevFilter(sev, btn) {
+      _sevFilter = sev;
+      document.querySelectorAll('.sev-filter').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filterAlerts();
+    }
+
+    function filterAlerts() {
+      const q = (document.getElementById('alert-search').value || '').toLowerCase();
+      const rows = document.querySelectorAll('#alert-tbody tr[data-sev]');
+      let visible = 0;
+      rows.forEach(row => {
+        const sevMatch = _sevFilter === 'all' || row.dataset.sev === _sevFilter;
+        const textMatch = !q || (row.dataset.search || '').includes(q);
+        const show = sevMatch && textMatch;
+        row.style.display = show ? '' : 'none';
+        if (show) visible++;
+      });
+    }
+
+    function toggleShowAll() {
+      if (_showingAll) {
+        _showingAll = false;
+        document.getElementById('show-all-btn').textContent = 'Show All';
+        document.getElementById('alert-count-label').textContent = 'Latest 50 events';
+        // restore original rows
+        if (_allAlerts) {
+          renderAlertRows(_allAlerts.slice(0, 50));
+        }
+      } else {
+        _showingAll = true;
+        document.getElementById('show-all-btn').textContent = 'Show Less';
+        document.getElementById('alert-count-label').textContent = 'Loading...';
+        fetch('/api/alerts/?all=1')
+          .then(r => r.json())
+          .then(data => {
+            _allAlerts = data.alerts;
+            document.getElementById('alert-count-label').textContent = 'All ' + data.alerts.length + ' events';
+            renderAlertRows(data.alerts);
+            filterAlerts();
+          });
+      }
+    }
+
+    function renderAlertRows(alerts) {
+      const sevMap = {1:['HIGH','high'], 2:['MED','medium'], 3:['LOW','low'], 4:['INFO','info']};
+      const tbody = document.getElementById('alert-tbody');
+      tbody.innerHTML = alerts.map((a, i) => {
+        const ts = new Date(a.timestamp);
+        const label = ts.toLocaleString('en-US',{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+        const [sl, sc] = sevMap[a.severity] || ['INFO','info'];
+        const search = (a.signature + ' ' + a.src_ip + ' ' + a.dest_ip + ' ' + label).toLowerCase();
+        return '<tr data-sev="' + a.severity + '" data-search="' + search + '">' +
+          '<td class="table-index">' + (i+1) + '</td>' +
+          '<td class="time-cell">' + label + '</td>' +
+          '<td class="signature-cell">' + a.signature + '</td>' +
+          '<td class="ip-cell">' + a.src_ip + '</td>' +
+          '<td class="ip-cell">' + a.dest_ip + '</td>' +
+          '<td><span class="severity-badge ' + sc + '">' + sl + '</span></td>' +
+          '</tr>';
+      }).join('');
+      filterAlerts();
+    }
+
+  </script>
+
 </body>
 </html>
-
-
-
+
+
+
+
+
+
