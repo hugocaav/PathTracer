@@ -322,7 +322,13 @@ function updateUtcClock() {
 
       const incidents = payload.incidents || [];
       const hosts = payload.hosts || [];
-      const attackerIps = [...new Set(incidents.map((item) => item.src_ip).filter(Boolean))];
+      const attackerIps = [...new Set(incidents.map((item) => item.src_ip).filter(ip => {
+        if (!ip) return false;
+        if (ip === "0.0.0.0" || ip === "255.255.255.255") return false;
+        const last = ip.split(".").pop();
+        if (last === "0" || last === "255") return false;
+        return true;
+      }))];
       const hostIps = [...new Set(hosts.map((host) => host.ip_address).filter(Boolean))];
       const victimIps = hostIps.filter((ip) => !attackerIps.includes(ip));
 
@@ -409,7 +415,7 @@ function updateUtcClock() {
         if (!incident.src_ip || !fallbackVictims.length) {
           return;
         }
-        const targetIp = fallbackVictims[index % fallbackVictims.length];
+        const targetIp = victimIps.find(ip => ip !== incident.src_ip) || fallbackVictims[0];
         if (!targetIp || targetIp === incident.src_ip) {
           return;
         }

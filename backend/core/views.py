@@ -126,7 +126,21 @@ def incident_detail(request, pk):
 
 def api_incidents(request):
     """Return incidents and known hosts for dashboard visualizations."""
-    incidents = Incident.objects.all().values(
+    import ipaddress
+
+    def is_noise_ip(ip):
+        try:
+            addr = ipaddress.ip_address(ip)
+            return (
+                addr.is_unspecified
+                or str(addr) == "255.255.255.255"
+                or str(addr).endswith(".0")
+                or str(addr).endswith(".255")
+            )
+        except ValueError:
+            return True
+
+    incidents_list = list(Incident.objects.all().order_by("-id").values(
         "id",
         "src_ip",
         "alert_count",
@@ -134,9 +148,18 @@ def api_incidents(request):
         "technique_id",
         "technique_name",
         "status",
+    )[:50])
+    shown_src_ips = {i["src_ip"] for i in incidents_list}
+    active_dest_ips = (
+        Alert.objects.filter(src_ip__in=shown_src_ips)
+        .values_list("dest_ip", flat=True)
+        .distinct()
     )
-    hosts = Host.objects.all().values("ip_address", "hostname")
-    return JsonResponse({"incidents": list(incidents), "hosts": list(hosts)})
+    hosts = Host.objects.filter(
+        ip_address__in=active_dest_ips
+    ).values("ip_address", "hostname")
+    hosts = [h for h in hosts if not is_noise_ip(h["ip_address"])]
+    return JsonResponse({"incidents": incidents_list, "hosts": hosts})
 
 
 def api_alerts(request):
