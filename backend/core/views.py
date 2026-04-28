@@ -141,7 +141,11 @@ def api_incidents(request):
 
 def api_alerts(request):
     """Return recent alerts for the dashboard table."""
-    alerts = Alert.objects.all().order_by("-timestamp")[:100].values(
+    show_all = request.GET.get("all") == "1"
+    qs = Alert.objects.all().order_by("-timestamp")
+    if not show_all:
+        qs = qs[:100]
+    alerts = qs.values(
         "id",
         "timestamp",
         "src_ip",
@@ -150,7 +154,7 @@ def api_alerts(request):
         "severity",
         "category",
     )
-    return JsonResponse({"alerts": list(alerts)})
+    return JsonResponse({"alerts": list(alerts), "total": Alert.objects.count()})
 
 
 def generate_ai_summary(request, pk):
